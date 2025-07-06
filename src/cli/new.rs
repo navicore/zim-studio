@@ -71,13 +71,17 @@ pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
 
 fn generate_project_name() -> Result<String, Box<dyn Error>> {
     let date = chrono::Local::now().format("%Y%m%d");
+    let root_dir = shellexpand::tilde(&crate::config::Config::load()?.root_dir);
 
-    // Find the next available number for today
-    let counter = 1;
-    let name = format!("{date}-{counter:03}");
-    // We'll check if it exists when we create the full path
-    // For now, just return the first attempt
-    Ok(name)
+    let mut counter = 1;
+    loop {
+        let name = format!("{date}-{counter:03}");
+        let project_path = Path::new(root_dir.as_ref()).join(&name);
+        if !project_path.exists() {
+            return Ok(name);
+        }
+        counter += 1;
+    }
 }
 
 fn print_tree(dir: &Path, prefix: &str, _is_last: bool) -> Result<(), Box<dyn Error>> {
