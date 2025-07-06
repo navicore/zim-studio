@@ -1,11 +1,11 @@
-use crate::media::{MediaMetadata, ArtEntry};
-
-pub fn generate_media_sidecar(metadata: &MediaMetadata) -> String {
+// Reserved for future use when we extract media metadata
+#[allow(dead_code)]
+pub fn generate_media_sidecar(metadata: &crate::media::MediaMetadata) -> String {
     let yaml = serde_yaml::to_string(metadata).unwrap_or_default();
-    
+
     format!(
         r#"---
-{}---
+{yaml}---
 
 # Notes
 
@@ -22,16 +22,15 @@ pub fn generate_media_sidecar(metadata: &MediaMetadata) -> String {
 ## Visual References
 
 [Any visual associations or artwork specific to this track]
-"#,
-        yaml
+"#
     )
 }
 
 pub fn generate_minimal_sidecar(file_name: &str, file_path: &str) -> String {
     format!(
         r#"---
-file: "{}"
-path: "{}"
+file: "{file_name}"
+path: "{file_path}"
 tags: []
 art: []
 ---
@@ -39,8 +38,6 @@ art: []
 # Notes
 
 [Add notes about this file here]
-"#,
-        file_name,
-        file_path
+"#
     )
 }
