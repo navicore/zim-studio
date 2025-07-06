@@ -71,7 +71,8 @@ pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
 
 fn generate_project_name() -> Result<String, Box<dyn Error>> {
     let date = chrono::Local::now().format("%Y%m%d");
-    let root_dir = shellexpand::tilde(&crate::config::Config::load()?.root_dir);
+    let binding = crate::config::Config::load()?;
+    let root_dir = shellexpand::tilde(&binding.root_dir);
 
     let mut counter = 1;
     loop {
