@@ -1,5 +1,7 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{Generator, Shell, generate};
 use std::error::Error;
+use std::io;
 
 mod cli;
 mod config;
@@ -25,6 +27,12 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// Generate shell completions
+    Completions {
+        /// The shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }
 
 #[derive(Subcommand)]
@@ -38,6 +46,17 @@ enum ConfigAction {
         /// Configuration value
         value: String,
     },
+    /// Edit configuration file in your editor
+    Edit,
+}
+
+fn print_completions<G: Generator>(generator: G, cmd: &mut clap::Command) {
+    generate(
+        generator,
+        cmd,
+        cmd.get_name().to_string(),
+        &mut io::stdout(),
+    );
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -54,7 +73,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             ConfigAction::Set { key, value } => {
                 cli::config::handle_config_set(&key, &value)?;
             }
+            ConfigAction::Edit => {
+                cli::config::handle_config_edit()?;
+            }
         },
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            print_completions(shell, &mut cmd);
+        }
     }
 
     Ok(())
