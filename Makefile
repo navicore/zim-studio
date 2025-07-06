@@ -21,7 +21,7 @@ fmt-check:
 
 # Run clippy lints
 clippy:
-	cargo clippy -- -D warnings
+	cargo clippy -- -D warnings -D clippy::uninlined-format-args
 
 # Clean build artifacts
 clean:

@@ -106,7 +106,7 @@ impl Config {
         match key {
             "root_dir" => self.root_dir = value.to_string(),
             "default_artist" => self.default_artist = value.to_string(),
-            _ => return Err(format!("Unknown configuration key: {}", key).into()),
+            _ => return Err(format!("Unknown configuration key: {key}").into()),
         }
         Ok(())
     }

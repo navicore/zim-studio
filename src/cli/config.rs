@@ -19,7 +19,7 @@ pub fn handle_config_set(key: &str, value: &str) -> Result<(), Box<dyn Error>> {
     config.set_value(key, value)?;
     config.save()?;
 
-    println!("Configuration updated: {} = {}", key, value);
+    println!("Configuration updated: {key} = {value}");
 
     Ok(())
 }
