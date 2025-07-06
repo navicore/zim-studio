@@ -23,8 +23,9 @@ fn test_config_lifecycle() {
     // Load and verify values
     let loaded = zim_studio::config::Config::load().unwrap();
     assert_eq!(loaded.root_dir, "/test/music");
-    assert_eq!(loaded.default_folders.len(), 6);
+    assert_eq!(loaded.default_folders.len(), 7);
     assert!(loaded.default_folders.contains(&"sources".to_string()));
+    assert!(loaded.default_folders.contains(&"visuals".to_string()));
 
     // Test config mutation
     let mut config = zim_studio::config::Config::load().unwrap();

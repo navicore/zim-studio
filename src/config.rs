@@ -30,14 +30,32 @@ fn default_folders() -> Vec<String> {
         "mixes".to_string(),
         "masters".to_string(),
         "project".to_string(),
+        "visuals".to_string(),
     ]
 }
 
 fn default_gitignore() -> Vec<String> {
     vec![
+        // Audio files
         "*.wav".to_string(),
         "*.flac".to_string(),
         "*.aiff".to_string(),
+        "*.mp3".to_string(),
+        "*.m4a".to_string(),
+        // Visual media files
+        "*.jpg".to_string(),
+        "*.jpeg".to_string(),
+        "*.png".to_string(),
+        "*.gif".to_string(),
+        "*.mp4".to_string(),
+        "*.mov".to_string(),
+        "*.avi".to_string(),
+        "*.webm".to_string(),
+        "*.tiff".to_string(),
+        "*.bmp".to_string(),
+        "*.heic".to_string(),
+        "*.heif".to_string(),
+        // DAW temp files
         "*.als~".to_string(),
         "project/*/temp/".to_string(),
     ]

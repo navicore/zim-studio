@@ -5,6 +5,7 @@ use std::io;
 
 mod cli;
 mod config;
+mod media;
 mod project;
 
 #[derive(Parser)]

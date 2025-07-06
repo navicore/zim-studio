@@ -29,6 +29,14 @@ pub fn create_project_structure(
     fs::create_dir_all(project_folder.join("ableton"))?;
     fs::create_dir_all(project_folder.join("reaper"))?;
 
+    // Create visual asset subdirectories if visuals folder exists
+    if folders.iter().any(|f| f == "visuals") {
+        let visuals_folder = project_path.join("visuals");
+        fs::create_dir_all(visuals_folder.join("inspiration"))?;
+        fs::create_dir_all(visuals_folder.join("covers"))?;
+        fs::create_dir_all(visuals_folder.join("other"))?;
+    }
+
     Ok(())
 }
 
@@ -40,13 +48,17 @@ fn folder_description(folder: &str) -> &'static str {
         "mixes" => "combined track renders (pre-master)",
         "masters" => "finalized, polished versions",
         "project" => "DAW-specific session files",
+        "visuals" => "visual assets, artwork, and inspiration images",
         _ => "project-specific",
     }
 }
 
 pub fn create_gitignore(project_path: &Path, patterns: &[String]) -> Result<(), Box<dyn Error>> {
     let gitignore_path = project_path.join(".gitignore");
-    let content = patterns.join("\n") + "\n";
+    let mut content = String::from("# Media files are backed up separately to NAS\n");
+    content.push_str("# Git tracks metadata (.md files) and project structure only\n\n");
+    content.push_str(&patterns.join("\n"));
+    content.push('\n');
     fs::write(gitignore_path, content)?;
     Ok(())
 }
@@ -56,7 +68,7 @@ pub fn create_project_metadata(
     project_name: &str,
     artist: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let metadata_path = project_path.join(format!("{project_name}.md"));
+    let metadata_path = project_path.join("README.md");
     let content = format!(
         r#"---
 name: "{}"
@@ -64,6 +76,15 @@ artist: "{}"
 created: "{}"
 status: "active"
 tags: []
+art: []
+# Example art entries:
+# art:
+#   - path: "inspiration/mood-board.jpg"
+#     description: "Mood board for the overall project vibe"
+#     purpose: "inspiration"
+#   - path: "covers/album-cover-v1.png"
+#     description: "First draft of album cover"
+#     purpose: "cover_art"
 ---
 
 # {}
@@ -75,6 +96,10 @@ tags: []
 ## Notes
 
 [Session notes, ideas, and documentation]
+
+## Visual Assets
+
+[Document any visual inspiration, artwork, or graphics associated with this project]
 "#,
         project_name,
         artist,
