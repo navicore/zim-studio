@@ -1,0 +1,20 @@
+[package]
+name = "zim-studio"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Ed Sweeney <ed@onextent.com>"]
+
+[[bin]]
+name = "zim"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+dirs = "5.0"
+shellexpand = "3.1"
+
+[dev-dependencies]
+tempfile = "3"

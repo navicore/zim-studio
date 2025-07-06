@@ -1,0 +1,61 @@
+use clap::{Parser, Subcommand};
+use std::error::Error;
+
+mod cli;
+mod config;
+
+#[derive(Parser)]
+#[command(name = "zim")]
+#[command(about = "Terminal-based audio project scaffold and metadata system")]
+#[command(version)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Initialize ZIM with a root directory for all music projects
+    Init {
+        /// Root directory for all music projects
+        root_dir: String,
+    },
+    /// Show current configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// View current configuration
+    View,
+    /// Set a configuration value
+    Set {
+        /// Configuration key
+        key: String,
+        /// Configuration value
+        value: String,
+    },
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Init { root_dir } => {
+            cli::init::handle_init(&root_dir)?;
+        }
+        Commands::Config { action } => match action {
+            ConfigAction::View => {
+                cli::config::handle_config_view()?;
+            }
+            ConfigAction::Set { key, value } => {
+                cli::config::handle_config_set(&key, &value)?;
+            }
+        },
+    }
+
+    Ok(())
+}
