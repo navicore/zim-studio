@@ -10,6 +10,10 @@ pub fn handle_config_view() -> Result<(), Box<dyn Error>> {
     println!("  default_artist: {}", config.default_artist);
     println!("  default_folders: {:?}", config.default_folders);
     println!("  include_readmes: {}", config.include_readmes);
+    println!(
+        "  normalize_project_names: {}",
+        config.normalize_project_names
+    );
 
     Ok(())
 }

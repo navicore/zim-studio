@@ -1,10 +1,11 @@
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, builder::PossibleValuesParser};
 use clap_complete::{Generator, Shell, generate};
 use std::error::Error;
 use std::io;
 
 mod cli;
 mod config;
+mod project;
 
 #[derive(Parser)]
 #[command(name = "zim")]
@@ -33,6 +34,11 @@ enum Commands {
         #[arg(value_enum)]
         shell: Shell,
     },
+    /// Create a new audio project scaffold
+    New {
+        /// Project name (optional, auto-generates if not provided)
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -42,6 +48,7 @@ enum ConfigAction {
     /// Set a configuration value
     Set {
         /// Configuration key
+        #[arg(value_parser = PossibleValuesParser::new(["root_dir", "default_artist", "normalize_project_names"]))]
         key: String,
         /// Configuration value
         value: String,
@@ -80,6 +87,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
             print_completions(shell, &mut cmd);
+        }
+        Commands::New { name } => {
+            cli::new::handle_new(name.as_deref())?;
         }
     }
 

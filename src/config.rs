@@ -14,6 +14,8 @@ pub struct Config {
     pub default_gitignore: Vec<String>,
     #[serde(default = "default_include_readmes")]
     pub include_readmes: bool,
+    #[serde(default = "default_normalize_project_names")]
+    pub normalize_project_names: bool,
 }
 
 fn default_artist() -> String {
@@ -45,6 +47,10 @@ fn default_include_readmes() -> bool {
     true
 }
 
+fn default_normalize_project_names() -> bool {
+    true
+}
+
 impl Config {
     pub fn new(root_dir: String) -> Self {
         Self {
@@ -53,6 +59,7 @@ impl Config {
             default_folders: default_folders(),
             default_gitignore: default_gitignore(),
             include_readmes: default_include_readmes(),
+            normalize_project_names: default_normalize_project_names(),
         }
     }
 
@@ -106,6 +113,11 @@ impl Config {
         match key {
             "root_dir" => self.root_dir = value.to_string(),
             "default_artist" => self.default_artist = value.to_string(),
+            "normalize_project_names" => {
+                self.normalize_project_names = value
+                    .parse::<bool>()
+                    .map_err(|_| "Value must be 'true' or 'false'")?;
+            }
             _ => return Err(format!("Unknown configuration key: {key}").into()),
         }
         Ok(())
