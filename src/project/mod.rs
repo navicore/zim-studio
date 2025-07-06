@@ -46,7 +46,7 @@ fn folder_description(folder: &str) -> &'static str {
 
 pub fn create_gitignore(project_path: &Path, patterns: &[String]) -> Result<(), Box<dyn Error>> {
     let gitignore_path = project_path.join(".gitignore");
-    let content = patterns.join("\n");
+    let content = patterns.join("\n") + "\n";
     fs::write(gitignore_path, content)?;
     Ok(())
 }
