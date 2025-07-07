@@ -1,19 +1,31 @@
 use crate::media::metadata::read_audio_metadata;
 use crate::templates::{self, SidecarMetadata};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use owo_colors::OwoColorize;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     let project_path = Path::new(project_path);
 
     // Verify this is a valid project directory
     if !project_path.exists() {
-        return Err(format!("Path does not exist: {}", project_path.display()).into());
+        return Err(format!(
+            "{} Path does not exist: {}",
+            "Error:".red().bold(),
+            project_path.display()
+        )
+        .into());
     }
 
-    println!("Scanning project: {}", project_path.display());
+    println!(
+        "{} {}",
+        "Scanning project:".bright_black(),
+        project_path.display().to_string().cyan()
+    );
 
     // Get audio file extensions we want sidecars for
     let audio_extensions: HashSet<&str> = ["wav", "flac", "aiff", "mp3", "m4a"]
@@ -21,33 +33,121 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
         .cloned()
         .collect();
 
-    let mut created_count = 0;
-    let mut skipped_count = 0;
-    let mut updated_count = 0;
+    // First, count total audio files
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+    );
+    spinner.set_message("Counting audio files...");
+
+    let total_files = count_audio_files(project_path, &audio_extensions)?;
+    spinner.finish_and_clear();
+
+    if total_files == 0 {
+        println!("{} No audio files found in project", "⚠".yellow());
+        return Ok(());
+    }
+
+    println!(
+        "{} Found {} audio files\n",
+        "ℹ".blue(),
+        total_files.to_string().cyan().bold()
+    );
+
+    let created_count = Arc::new(Mutex::new(0));
+    let skipped_count = Arc::new(Mutex::new(0));
+    let updated_count = Arc::new(Mutex::new(0));
+
+    let multi = MultiProgress::new();
+    let pb = multi.add(ProgressBar::new(total_files as u64));
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.cyan} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("█▓░"),
+    );
+    pb.set_message("Processing audio files...");
 
     // Walk the directory tree
     scan_directory(
         project_path,
         &audio_extensions,
-        &mut created_count,
-        &mut skipped_count,
-        &mut updated_count,
+        &created_count,
+        &skipped_count,
+        &updated_count,
+        &pb,
     )?;
 
-    println!("\n✓ Update complete!");
-    println!("  Created: {created_count} new sidecar files");
-    println!("  Updated: {updated_count} existing files");
-    println!("  Skipped: {skipped_count} files (already have sidecars)");
+    pb.finish_with_message("Done");
+
+    let created = *created_count.lock().unwrap();
+    let updated = *updated_count.lock().unwrap();
+    let skipped = *skipped_count.lock().unwrap();
+
+    println!("\n{} {}", "✓".green().bold(), "Update complete!".bold());
+    println!(
+        "  {} {} new sidecar files",
+        "Created:".bright_black(),
+        created.to_string().green().bold()
+    );
+    println!(
+        "  {} {} existing files",
+        "Updated:".bright_black(),
+        updated.to_string().blue().bold()
+    );
+    println!(
+        "  {} {} files {}",
+        "Skipped:".bright_black(),
+        skipped.to_string().yellow().bold(),
+        "(already have sidecars)".bright_black()
+    );
 
     Ok(())
+}
+
+fn count_audio_files(dir: &Path, audio_exts: &HashSet<&str>) -> Result<u32, Box<dyn Error>> {
+    let mut count = 0;
+    let entries = fs::read_dir(dir)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+
+        if let Some(name) = path.file_name() {
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+        }
+
+        if path.is_dir() {
+            let dir_name = path.file_name().unwrap().to_string_lossy();
+            if dir_name == "node_modules" || dir_name == ".git" || dir_name == "temp" {
+                continue;
+            }
+            count += count_audio_files(&path, audio_exts)?;
+        } else if path.is_file() {
+            if let Some(extension) = path.extension() {
+                let ext = extension.to_string_lossy().to_lowercase();
+                if audio_exts.contains(ext.as_str()) {
+                    count += 1;
+                }
+            }
+        }
+    }
+
+    Ok(count)
 }
 
 fn scan_directory(
     dir: &Path,
     audio_exts: &HashSet<&str>,
-    created: &mut u32,
-    skipped: &mut u32,
-    updated: &mut u32,
+    created: &Arc<Mutex<u32>>,
+    skipped: &Arc<Mutex<u32>>,
+    updated: &Arc<Mutex<u32>>,
+    pb: &ProgressBar,
 ) -> Result<(), Box<dyn Error>> {
     let entries = fs::read_dir(dir)?;
 
@@ -70,14 +170,15 @@ fn scan_directory(
             }
 
             // Recurse into subdirectory
-            scan_directory(&path, audio_exts, created, skipped, updated)?;
+            scan_directory(&path, audio_exts, created, skipped, updated, pb)?;
         } else if path.is_file() {
             // Check if this is an audio file
             if let Some(extension) = path.extension() {
                 let ext = extension.to_string_lossy().to_lowercase();
 
                 if audio_exts.contains(ext.as_str()) {
-                    process_media_file(&path, created, skipped, updated)?;
+                    process_media_file(&path, created, skipped, updated, pb)?;
+                    pb.inc(1);
                 }
             }
         }
@@ -88,18 +189,20 @@ fn scan_directory(
 
 fn process_media_file(
     file_path: &Path,
-    created: &mut u32,
-    skipped: &mut u32,
-    _updated: &mut u32,
+    created: &Arc<Mutex<u32>>,
+    skipped: &Arc<Mutex<u32>>,
+    _updated: &Arc<Mutex<u32>>,
+    pb: &ProgressBar,
 ) -> Result<(), Box<dyn Error>> {
     let sidecar_path = get_sidecar_path(file_path);
 
+    let file_name = file_path.file_name().unwrap().to_string_lossy();
+
     if sidecar_path.exists() {
-        *skipped += 1;
+        *skipped.lock().unwrap() += 1;
+        pb.set_message(format!("Skipped: {}", file_name.bright_black()));
         return Ok(());
     }
-
-    let file_name = file_path.file_name().unwrap().to_string_lossy();
     let relative_path = file_path.strip_prefix(".").unwrap_or(file_path);
 
     // Get file system metadata
@@ -139,7 +242,12 @@ fn process_media_file(
                     })
                 }
                 Err(e) => {
-                    eprintln!("  Warning: Could not read metadata from {file_name}: {e}");
+                    eprintln!(
+                        "  {} Could not read metadata from {}: {}",
+                        "Warning:".yellow(),
+                        file_name.yellow(),
+                        e.to_string().bright_black()
+                    );
                     templates::generate_minimal_sidecar_with_fs_metadata(
                         &file_name,
                         &relative_path.to_string_lossy(),
@@ -161,8 +269,8 @@ fn process_media_file(
     };
 
     fs::write(&sidecar_path, content)?;
-    println!("  Created: {}", sidecar_path.display());
-    *created += 1;
+    pb.set_message(format!("Created: {}", file_name.green()));
+    *created.lock().unwrap() += 1;
 
     Ok(())
 }

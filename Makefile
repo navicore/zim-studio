@@ -27,5 +27,13 @@ clippy:
 clean:
 	cargo clean
 
+# build artifacts
+build:
+	cargo build --features player
+
+# build artifacts
+install:
+	cargo install --path . --features player
+
 # Run all CI checks locally (matches GitHub Actions)
 ci: fmt-check clippy test

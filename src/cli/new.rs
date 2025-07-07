@@ -1,7 +1,12 @@
 use crate::config::Config;
 use crate::project;
+use dialoguer::{Confirm, Input, theme::ColorfulTheme};
+use indicatif::{ProgressBar, ProgressStyle};
+use owo_colors::OwoColorize;
 use std::error::Error;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
     // Load configuration
@@ -10,7 +15,21 @@ pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
     // Generate project name if not provided
     let project_name = match name {
         Some(n) => n.to_string(),
-        None => generate_project_name()?,
+        None => {
+            let generated = generate_project_name()?;
+            let use_generated = Confirm::with_theme(&ColorfulTheme::default())
+                .with_prompt(format!("Use auto-generated name '{}'?", generated.cyan()))
+                .default(true)
+                .interact()?;
+
+            if use_generated {
+                generated
+            } else {
+                Input::<String>::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Enter project name")
+                    .interact_text()?
+            }
+        }
     };
 
     // Validate project name
@@ -33,38 +52,83 @@ pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
     // Check if project already exists
     if project_path.exists() {
         return Err(format!(
-            "Project '{}' already exists at {}",
-            project_name,
-            project_path.display()
+            "{} Project '{}' already exists at {}",
+            "Error:".red().bold(),
+            project_name.yellow(),
+            project_path.display().to_string().cyan()
         )
         .into());
     }
 
-    println!("Creating new project: {project_name}");
+    println!(
+        "{} {}",
+        "Creating new project:".bright_black(),
+        project_name.cyan().bold()
+    );
     if config.normalize_project_names && original_name != project_name {
-        println!("  (normalized from: {original_name})");
+        println!(
+            "  {} {}",
+            "(normalized from:".bright_black(),
+            original_name.yellow()
+        );
     }
-    println!("Location: {}", project_path.display());
+    println!(
+        "{} {}",
+        "Location:".bright_black(),
+        project_path.display().to_string().cyan()
+    );
+    println!();
+
+    let pb = ProgressBar::new(3);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.cyan} [{bar:30.cyan/blue}] {msg}")
+            .unwrap()
+            .progress_chars("█▓░"),
+    );
 
     // Create project structure
+    pb.set_message("Creating project structure...");
     project::create_project_structure(&project_path, &config.default_folders)?;
+    thread::sleep(Duration::from_millis(100));
+    pb.inc(1);
 
     // Create .gitignore
     if !config.default_gitignore.is_empty() {
+        pb.set_message("Creating .gitignore...");
         project::create_gitignore(&project_path, &config.default_gitignore)?;
+        thread::sleep(Duration::from_millis(100));
     }
+    pb.inc(1);
 
     // Create project metadata file
+    pb.set_message("Creating project metadata...");
     project::create_project_metadata(&project_path, &project_name, &config.default_artist)?;
+    thread::sleep(Duration::from_millis(100));
+    pb.inc(1);
 
-    println!("\n✓ Project '{project_name}' created successfully!");
-    println!("\nProject structure:");
+    pb.finish_and_clear();
+
+    println!(
+        "\n{} Project '{}' created successfully!",
+        "✓".green().bold(),
+        project_name.cyan().bold()
+    );
+    println!("\n{}", "Project structure:".yellow().bold());
     print_tree(&project_path, "", true)?;
 
-    println!("\nNext steps:");
-    println!("  cd {}", project_path.display());
-    println!("  git init");
-    println!("  # Start creating music!");
+    println!("\n{}", "Next steps:".yellow().bold());
+    println!(
+        "  {} {}",
+        "$".bright_black(),
+        format!("cd {}", project_path.display()).cyan()
+    );
+    println!("  {} {}", "$".bright_black(), "git init".cyan());
+    println!(
+        "  {} {}",
+        "#".bright_black(),
+        "Start creating music!".bright_black().italic()
+    );
 
     Ok(())
 }
@@ -99,15 +163,26 @@ fn print_tree(dir: &Path, prefix: &str, _is_last: bool) -> Result<(), Box<dyn Er
 
         let is_last_entry = index == entry_count - 1;
         let connector = if is_last_entry {
-            "└── "
+            "└── ".bright_black().to_string()
         } else {
-            "├── "
+            "├── ".bright_black().to_string()
         };
 
-        println!("{prefix}{connector}{file_name_str}");
+        let styled_name = if path.is_dir() {
+            file_name_str.blue().bold().to_string()
+        } else if file_name_str.ends_with(".md") {
+            file_name_str.green().to_string()
+        } else {
+            file_name_str.to_string()
+        };
+        println!("{prefix}{connector}{styled_name}");
 
         if path.is_dir() && !file_name_str.starts_with('.') {
-            let extension = if is_last_entry { "    " } else { "│   " };
+            let extension = if is_last_entry {
+                "    ".to_string()
+            } else {
+                "│   ".bright_black().to_string()
+            };
             let new_prefix = format!("{prefix}{extension}");
 
             // Only recurse one level deep for cleaner output
