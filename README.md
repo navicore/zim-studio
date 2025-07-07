@@ -1,6 +1,6 @@
 # ZIM - Terminal-Based Audio Project Scaffold and Metadata System
 
-*A Zettelkasten Information System for Music*
+*A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music*
 
 The main two functions of this tool are:
   1. Initialize a project structure of directories and placeholder README.md files
