@@ -57,4 +57,4 @@ make check      # Check compilation
 
 ## License
 
-TBD
+MIT
