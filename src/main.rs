@@ -7,6 +7,7 @@ mod cli;
 mod config;
 mod media;
 mod project;
+mod templates;
 
 #[derive(Parser)]
 #[command(name = "zim")]
@@ -39,6 +40,18 @@ enum Commands {
     New {
         /// Project name (optional, auto-generates if not provided)
         name: Option<String>,
+    },
+    /// Update sidecar metadata files for media assets
+    Update {
+        /// Path to project (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: String,
+    },
+    /// Validate YAML frontmatter in all sidecar files
+    Lint {
+        /// Path to project (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: String,
     },
 }
 
@@ -91,6 +104,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::New { name } => {
             cli::new::handle_new(name.as_deref())?;
+        }
+        Commands::Update { path } => {
+            cli::update::handle_update(&path)?;
+        }
+        Commands::Lint { path } => {
+            cli::lint::handle_lint(&path)?;
         }
     }
 
