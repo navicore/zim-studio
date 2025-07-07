@@ -47,6 +47,12 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Validate YAML frontmatter in all sidecar files
+    Lint {
+        /// Path to project (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -101,6 +107,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Update { path } => {
             cli::update::handle_update(&path)?;
+        }
+        Commands::Lint { path } => {
+            cli::lint::handle_lint(&path)?;
         }
     }
 

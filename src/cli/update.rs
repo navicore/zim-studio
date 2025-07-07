@@ -1,4 +1,5 @@
-use crate::templates;
+use crate::media::metadata::read_audio_metadata;
+use crate::templates::{self, SidecarMetadata};
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
@@ -14,17 +15,11 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
 
     println!("Scanning project: {}", project_path.display());
 
-    // Get all media file extensions we care about
+    // Get audio file extensions we want sidecars for
     let audio_extensions: HashSet<&str> = ["wav", "flac", "aiff", "mp3", "m4a"]
         .iter()
         .cloned()
         .collect();
-    let visual_extensions: HashSet<&str> = [
-        "jpg", "jpeg", "png", "gif", "mp4", "mov", "avi", "webm", "tiff", "bmp", "heic", "heif",
-    ]
-    .iter()
-    .cloned()
-    .collect();
 
     let mut created_count = 0;
     let mut skipped_count = 0;
@@ -34,7 +29,6 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     scan_directory(
         project_path,
         &audio_extensions,
-        &visual_extensions,
         &mut created_count,
         &mut skipped_count,
         &mut updated_count,
@@ -51,7 +45,6 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
 fn scan_directory(
     dir: &Path,
     audio_exts: &HashSet<&str>,
-    visual_exts: &HashSet<&str>,
     created: &mut u32,
     skipped: &mut u32,
     updated: &mut u32,
@@ -77,13 +70,13 @@ fn scan_directory(
             }
 
             // Recurse into subdirectory
-            scan_directory(&path, audio_exts, visual_exts, created, skipped, updated)?;
+            scan_directory(&path, audio_exts, created, skipped, updated)?;
         } else if path.is_file() {
-            // Check if this is a media file
+            // Check if this is an audio file
             if let Some(extension) = path.extension() {
                 let ext = extension.to_string_lossy().to_lowercase();
 
-                if audio_exts.contains(ext.as_str()) || visual_exts.contains(ext.as_str()) {
+                if audio_exts.contains(ext.as_str()) {
                     process_media_file(&path, created, skipped, updated)?;
                 }
             }
@@ -106,11 +99,66 @@ fn process_media_file(
         return Ok(());
     }
 
-    // Create minimal sidecar for now
     let file_name = file_path.file_name().unwrap().to_string_lossy();
     let relative_path = file_path.strip_prefix(".").unwrap_or(file_path);
 
-    let content = templates::generate_minimal_sidecar(&file_name, &relative_path.to_string_lossy());
+    // Get file system metadata
+    let file_metadata = std::fs::metadata(file_path)?;
+    let file_size = file_metadata.len();
+
+    // Get modification time
+    let modified = file_metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|duration| {
+            chrono::DateTime::<chrono::Utc>::from_timestamp(duration.as_secs() as i64, 0)
+        })
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string());
+
+    // Try to read audio metadata
+    let extension = file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+
+    let content = match extension.as_deref() {
+        Some("flac") | Some("wav") => {
+            match read_audio_metadata(file_path) {
+                Ok(metadata) => {
+                    // Generate sidecar with metadata
+                    templates::generate_audio_sidecar_with_metadata(&SidecarMetadata {
+                        file_name: &file_name,
+                        file_path: &relative_path.to_string_lossy(),
+                        sample_rate: metadata.sample_rate,
+                        channels: metadata.channels,
+                        bits_per_sample: metadata.bits_per_sample,
+                        duration_seconds: metadata.duration_seconds,
+                        file_size,
+                        modified: modified.as_deref(),
+                    })
+                }
+                Err(e) => {
+                    eprintln!("  Warning: Could not read metadata from {file_name}: {e}");
+                    templates::generate_minimal_sidecar_with_fs_metadata(
+                        &file_name,
+                        &relative_path.to_string_lossy(),
+                        file_size,
+                        modified.as_deref(),
+                    )
+                }
+            }
+        }
+        _ => {
+            // Unsupported audio format - create minimal sidecar
+            templates::generate_minimal_sidecar_with_fs_metadata(
+                &file_name,
+                &relative_path.to_string_lossy(),
+                file_size,
+                modified.as_deref(),
+            )
+        }
+    };
 
     fs::write(&sidecar_path, content)?;
     println!("  Created: {}", sidecar_path.display());
