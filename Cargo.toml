@@ -21,7 +21,7 @@ chrono = "0.4"
 serde_yaml = "0.9"
 owo-colors = "4"
 indicatif = "0.17"
-console = "0.15"
+console = "0.16"
 dialoguer = "0.11"
 
 # Audio player dependencies (optional for now)
