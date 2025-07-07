@@ -9,6 +9,9 @@ mod media;
 mod project;
 mod templates;
 
+#[cfg(feature = "player")]
+mod player;
+
 #[derive(Parser)]
 #[command(name = "zim")]
 #[command(about = "Terminal-based audio project scaffold and metadata system")]
@@ -52,6 +55,14 @@ enum Commands {
         /// Path to project (defaults to current directory)
         #[arg(default_value = ".")]
         path: String,
+    },
+    /// Play audio files with integrated player (coming soon)
+    Play {
+        /// Search pattern or file path
+        pattern: Option<String>,
+        /// Start interactive mode for browsing and playing
+        #[arg(short, long)]
+        interactive: bool,
     },
 }
 
@@ -110,6 +121,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Lint { path } => {
             cli::lint::handle_lint(&path)?;
+        }
+        Commands::Play {
+            pattern,
+            interactive,
+        } => {
+            cli::play::handle_play(pattern.as_deref(), interactive)?;
         }
     }
 

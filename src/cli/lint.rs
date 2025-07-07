@@ -1,3 +1,5 @@
+use indicatif::{ProgressBar, ProgressStyle};
+use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
@@ -75,11 +77,29 @@ pub fn handle_lint(project_path: &str) -> Result<(), Box<dyn Error>> {
     let project_path = Path::new(project_path);
 
     if !project_path.exists() {
-        return Err(format!("Path does not exist: {}", project_path.display()).into());
+        return Err(format!(
+            "{} Path does not exist: {}",
+            "Error:".red().bold(),
+            project_path.display()
+        )
+        .into());
     }
 
-    println!("Linting project: {}", project_path.display());
+    println!(
+        "{} {}",
+        "Linting project:".bright_black(),
+        project_path.display().to_string().cyan()
+    );
     println!();
+
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+    );
+    spinner.set_message("Scanning for sidecar files...");
 
     let mut total_files = 0;
     let mut valid_files = 0;
@@ -94,26 +114,55 @@ pub fn handle_lint(project_path: &str) -> Result<(), Box<dyn Error>> {
         &mut errors,
     )?;
 
+    spinner.finish_and_clear();
+
     // Print results
     if !errors.is_empty() {
-        println!("❌ Found {} YAML errors:\n", errors.len());
+        println!(
+            "{} Found {} YAML errors:\n",
+            "❌".red(),
+            errors.len().to_string().red().bold()
+        );
         for (path, error) in errors {
-            println!("  {}", path.display());
-            println!("    Error: {error}\n");
+            let relative_path = path.strip_prefix(project_path).unwrap_or(&path);
+            println!("  {}", relative_path.display().to_string().yellow());
+            println!("    {} {}\n", "Error:".red(), error.bright_black());
         }
     }
 
-    println!("Summary:");
-    println!("  Total sidecar files: {total_files}");
-    println!("  ✓ Valid YAML: {valid_files}");
+    println!("{}", "Summary:".yellow().bold());
+    println!(
+        "  {} {}",
+        "Total sidecar files:".bright_black(),
+        total_files.to_string().cyan()
+    );
+    println!(
+        "  {} {}: {}",
+        "✓".green(),
+        "Valid YAML".bright_black(),
+        valid_files.to_string().green().bold()
+    );
     if invalid_files > 0 {
-        println!("  ✗ Invalid YAML: {invalid_files}");
+        println!(
+            "  {} {}: {}",
+            "✗".red(),
+            "Invalid YAML".bright_black(),
+            invalid_files.to_string().red().bold()
+        );
     }
 
     if invalid_files > 0 {
-        Err("Lint check failed: invalid YAML found".into())
+        Err(format!(
+            "{} Lint check failed: invalid YAML found",
+            "Error:".red().bold()
+        )
+        .into())
     } else {
-        println!("\n✓ All YAML frontmatter is valid!");
+        println!(
+            "\n{} {}",
+            "✓".green().bold(),
+            "All YAML frontmatter is valid!".green()
+        );
         Ok(())
     }
 }
@@ -152,7 +201,9 @@ fn scan_directory(
             if is_sidecar_file(&path) {
                 *total += 1;
                 match validate_yaml_frontmatter(&path) {
-                    Ok(()) => *valid += 1,
+                    Ok(()) => {
+                        *valid += 1;
+                    }
                     Err(e) => {
                         *invalid += 1;
                         errors.push((path, e.to_string()));
