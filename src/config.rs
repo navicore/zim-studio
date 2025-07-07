@@ -30,7 +30,6 @@ fn default_folders() -> Vec<String> {
         "mixes".to_string(),
         "masters".to_string(),
         "project".to_string(),
-        "visuals".to_string(),
     ]
 }
 

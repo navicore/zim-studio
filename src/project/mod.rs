@@ -29,14 +29,6 @@ pub fn create_project_structure(
     fs::create_dir_all(project_folder.join("ableton"))?;
     fs::create_dir_all(project_folder.join("reaper"))?;
 
-    // Create visual asset subdirectories if visuals folder exists
-    if folders.iter().any(|f| f == "visuals") {
-        let visuals_folder = project_path.join("visuals");
-        fs::create_dir_all(visuals_folder.join("inspiration"))?;
-        fs::create_dir_all(visuals_folder.join("covers"))?;
-        fs::create_dir_all(visuals_folder.join("other"))?;
-    }
-
     Ok(())
 }
 
@@ -48,7 +40,6 @@ fn folder_description(folder: &str) -> &'static str {
         "mixes" => "combined track renders (pre-master)",
         "masters" => "finalized, polished versions",
         "project" => "DAW-specific session files",
-        "visuals" => "visual assets, artwork, and inspiration images",
         _ => "project-specific",
     }
 }
@@ -79,10 +70,10 @@ tags: []
 art: []
 # Example art entries:
 # art:
-#   - path: "inspiration/mood-board.jpg"
+#   - path: "../shared-assets/mood-board.jpg"
 #     description: "Mood board for the overall project vibe"
 #     purpose: "inspiration"
-#   - path: "covers/album-cover-v1.png"
+#   - path: "~/Desktop/album-cover-v1.png"
 #     description: "First draft of album cover"
 #     purpose: "cover_art"
 ---
