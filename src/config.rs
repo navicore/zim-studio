@@ -26,7 +26,7 @@ fn default_folders() -> Vec<String> {
     vec![
         "sources".to_string(),
         "edits".to_string(),
-        "processed".to_string(),
+        "bounced".to_string(),
         "mixes".to_string(),
         "masters".to_string(),
         "project".to_string(),

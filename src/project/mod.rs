@@ -36,7 +36,7 @@ fn folder_description(folder: &str) -> &'static str {
     match folder {
         "sources" => "raw recordings (e.g., from iPad or field mic)",
         "edits" => "chopped/trimmed versions of raw files",
-        "processed" => "EQ'd, compressed, FX-enhanced versions",
+        "bounced" => "Rendered/bounced tracks (stems, FX prints)",
         "mixes" => "combined track renders (pre-master)",
         "masters" => "finalized, polished versions",
         "project" => "DAW-specific session files",
