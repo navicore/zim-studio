@@ -9,7 +9,7 @@ check:
 
 # Run tests
 test:
-	cargo test
+	cargo test --all-features
 
 # Format code
 fmt:
@@ -21,7 +21,7 @@ fmt-check:
 
 # Run clippy lints
 clippy:
-	cargo clippy -- -D warnings -D clippy::uninlined-format-args
+	cargo clippy --all-features -- -D warnings -D clippy::uninlined-format-args
 
 # Clean build artifacts
 clean:
