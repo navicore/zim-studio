@@ -1,6 +1,8 @@
 pub mod app;
 pub mod audio;
 pub mod browser;
+pub mod save_dialog;
+pub mod save_dialog_ui;
 pub mod ui;
 pub mod waveform;
 

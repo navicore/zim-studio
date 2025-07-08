@@ -4,13 +4,14 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, Borders, Paragraph,
+        Block, Borders, Gauge, Paragraph,
         canvas::{Canvas, Context},
     },
 };
 
 use super::app::App;
 use super::browser::draw_browser;
+use super::save_dialog_ui::draw_save_dialog;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let size = f.area();
@@ -22,6 +23,11 @@ pub fn draw(f: &mut Frame, app: &App) {
     if app.browser.is_active {
         draw_browser(f, size, &app.browser);
     }
+
+    // Draw save dialog if active
+    if let Some(ref save_dialog) = app.save_dialog {
+        draw_save_dialog(f, size, save_dialog);
+    }
 }
 
 fn draw_main_ui(f: &mut Frame, app: &App) {
@@ -30,16 +36,18 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
 
     let constraints = if show_oscilloscope {
         vec![
-            Constraint::Length(3), // Title
+            Constraint::Length(2), // Title (reduced from 3)
             Constraint::Length(3), // File info + LEDs
-            Constraint::Min(10),   // Waveform area
-            Constraint::Length(3), // Controls
+            Constraint::Length(3), // Progress bar
+            Constraint::Min(7),    // Waveform area
+            Constraint::Length(4), // Controls (increased for 2 rows)
         ]
     } else {
         vec![
-            Constraint::Length(3), // Title
+            Constraint::Length(2), // Title (reduced from 3)
             Constraint::Length(3), // File info + LEDs
-            Constraint::Length(3), // Controls
+            Constraint::Length(3), // Progress bar
+            Constraint::Length(4), // Controls (increased for 2 rows)
         ]
     };
 
@@ -49,28 +57,38 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         .constraints(constraints)
         .split(size);
 
-    // Title
-    let title = Paragraph::new("🎵 ZIM Audio Player")
+    // Title (more compact)
+    let title = Paragraph::new("🎵 ZIM Player")
         .style(
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::BOTTOM));
+        .alignment(Alignment::Center);
     f.render_widget(title, chunks[0]);
 
     // File info with LED indicators
     draw_file_info_with_leds(f, chunks[1], app);
 
+    // Progress bar
+    draw_progress_bar(f, chunks[2], app);
+
     // Oscilloscope visualization (only if window is tall enough)
     if show_oscilloscope {
-        draw_oscilloscope(f, chunks[2], app);
+        draw_oscilloscope(f, chunks[3], app);
     }
 
-    // Controls
-    let controls_idx = if show_oscilloscope { 3 } else { 2 };
-    let controls = vec![
+    // Controls (two rows)
+    let controls_idx = if show_oscilloscope { 4 } else { 3 };
+
+    // Split controls area into two rows
+    let control_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(chunks[controls_idx]);
+
+    // First row of controls
+    let controls_row1 = vec![
         if app.is_playing {
             Span::styled("[space]", Style::default().fg(Color::Yellow))
         } else {
@@ -81,15 +99,48 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         } else {
             " play  "
         }),
+        Span::styled("[←→]", Style::default().fg(Color::Magenta)),
+        Span::raw(" seek  "),
         Span::styled("[/]", Style::default().fg(Color::Blue)),
         Span::raw(" browse  "),
         Span::styled("[q]", Style::default().fg(Color::Red)),
         Span::raw(" quit"),
     ];
-    let controls_widget = Paragraph::new(Line::from(controls))
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::TOP));
-    f.render_widget(controls_widget, chunks[controls_idx]);
+
+    // Second row of controls
+    let controls_row2 = vec![
+        Span::styled("[i]", Style::default().fg(Color::Green)),
+        Span::raw(" in  "),
+        Span::styled("[o]", Style::default().fg(Color::Green)),
+        Span::raw(" out  "),
+        Span::styled("[x]", Style::default().fg(Color::Yellow)),
+        Span::raw(" clear  "),
+        if app.is_looping {
+            Span::styled(
+                "[l]",
+                Style::default().fg(Color::Magenta).bg(Color::DarkGray),
+            )
+        } else {
+            Span::styled("[l]", Style::default().fg(Color::Magenta))
+        },
+        Span::raw(if app.is_looping {
+            " loop ●  "
+        } else {
+            " loop  "
+        }),
+        Span::styled("[s]", Style::default().fg(Color::Cyan)),
+        Span::raw(" save"),
+    ];
+
+    let controls_widget1 = Paragraph::new(Line::from(controls_row1)).alignment(Alignment::Center);
+    let controls_widget2 = Paragraph::new(Line::from(controls_row2)).alignment(Alignment::Center);
+
+    // Add top border only on first row
+    let border_widget = Block::default().borders(Borders::TOP);
+    f.render_widget(border_widget, chunks[controls_idx]);
+
+    f.render_widget(controls_widget1, control_chunks[0]);
+    f.render_widget(controls_widget2, control_chunks[1]);
 }
 
 fn draw_file_info_with_leds(f: &mut Frame, area: Rect, app: &App) {
@@ -193,13 +244,7 @@ fn draw_oscilloscope(f: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
-                .title(" Oscilloscope ")
-                .title_style(
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                .border_style(Style::default().fg(Color::Cyan)),
         )
         .paint(|ctx| {
             // Draw grid
@@ -254,11 +299,14 @@ fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
     let samples = app.waveform_buffer.get_display_samples(area.width as usize);
 
     let points: Vec<(f64, f64)> = if samples.iter().any(|&s| s != 0.0) {
-        // Use real audio data
+        // Use real audio data - amplify for better visibility
         samples
             .iter()
             .enumerate()
-            .map(|(i, &sample)| (i as f64, sample.clamp(-0.9, 0.9) as f64))
+            .map(|(i, &sample)| {
+                let amplified = (sample * 1.5).clamp(-0.95, 0.95);
+                (i as f64, amplified as f64)
+            })
             .collect()
     } else {
         // Demo sine wave when no audio loaded
@@ -272,9 +320,9 @@ fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
             .map(|x| {
                 let t = x as f64 / area.width as f64 * 4.0 * std::f64::consts::PI;
                 // Mix two sine waves for more interesting visualization
-                let y1 = (t + time_offset * 0.5).sin() * 0.6;
-                let y2 = ((t * 2.0) + time_offset).sin() * 0.3;
-                let y = (y1 + y2).clamp(-0.9, 0.9);
+                let y1 = (t + time_offset * 0.5).sin() * 0.8;
+                let y2 = ((t * 2.0) + time_offset).sin() * 0.4;
+                let y = (y1 + y2).clamp(-0.95, 0.95);
                 (x as f64, y)
             })
             .collect()
@@ -289,5 +337,142 @@ fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
             y2: window[1].1,
             color: Color::Rgb(0, 255, 100), // Bright green like old oscilloscopes
         });
+    }
+}
+
+fn draw_progress_bar(f: &mut Frame, area: Rect, app: &App) {
+    let progress = app.playback_position;
+
+    // Format time display
+    let time_info = if let Some(duration) = app.duration {
+        let total_secs = duration.as_secs();
+        let current_secs = (total_secs as f32 * progress) as u64;
+
+        let current_mins = current_secs / 60;
+        let current_secs = current_secs % 60;
+        let total_mins = total_secs / 60;
+        let total_secs = total_secs % 60;
+
+        let mut time_str = format!(
+            "{:02}:{:02} / {:02}:{:02}",
+            current_mins, current_secs, total_mins, total_secs
+        );
+
+        // Add selection duration if marks are set
+        if let Some(selection_duration) = app.get_selection_duration() {
+            let sel_secs = selection_duration.as_secs_f32();
+            time_str.push_str(&format!(" [{:.1}s]", sel_secs));
+        }
+
+        time_str
+    } else {
+        "00:00 / 00:00".to_string()
+    };
+
+    // Create layout for time and progress
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(10),    // Progress bar
+            Constraint::Length(20), // Time display (increased for selection info)
+        ])
+        .split(area);
+
+    // Draw custom progress bar with markers
+    draw_progress_with_marks(f, chunks[0], app);
+
+    // Time display
+    let time_widget = Paragraph::new(time_info)
+        .style(Style::default().fg(Color::White))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+
+    f.render_widget(time_widget, chunks[1]);
+}
+
+fn draw_progress_with_marks(f: &mut Frame, area: Rect, app: &App) {
+    let progress = app.playback_position;
+    let progress_percent = (progress * 100.0) as u16;
+
+    // First draw the gauge
+    let label_style = if progress_percent >= 50 {
+        Style::default()
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let progress_widget = Gauge::default()
+        .block(Block::default().borders(Borders::ALL))
+        .gauge_style(Style::default().fg(Color::Cyan))
+        .percent(progress_percent)
+        .label(Span::styled(format!("{}%", progress_percent), label_style));
+
+    f.render_widget(progress_widget, area);
+
+    // Now overlay the markers
+    let inner_area = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
+    let bar_width = inner_area.width;
+
+    // Draw mark in
+    if let Some(mark_in) = app.mark_in {
+        let mark_x = inner_area.x + (mark_in * bar_width as f32) as u16;
+        if mark_x < inner_area.x + bar_width {
+            let marker = Paragraph::new("┃").style(
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            );
+            let marker_area = Rect {
+                x: mark_x,
+                y: inner_area.y,
+                width: 1,
+                height: 1,
+            };
+            f.render_widget(marker, marker_area);
+        }
+    }
+
+    // Draw mark out
+    if let Some(mark_out) = app.mark_out {
+        let mark_x = inner_area.x + (mark_out * bar_width as f32) as u16;
+        if mark_x < inner_area.x + bar_width {
+            let marker = Paragraph::new("┃")
+                .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
+            let marker_area = Rect {
+                x: mark_x,
+                y: inner_area.y,
+                width: 1,
+                height: 1,
+            };
+            f.render_widget(marker, marker_area);
+        }
+    }
+
+    // Highlight selection region if both marks are set
+    if let (Some(mark_in), Some(mark_out)) = (app.mark_in, app.mark_out) {
+        let start = mark_in.min(mark_out);
+        let end = mark_in.max(mark_out);
+
+        let start_x = (start * bar_width as f32) as u16;
+        let end_x = (end * bar_width as f32) as u16;
+        let selection_width = end_x.saturating_sub(start_x).max(1);
+
+        if start_x < bar_width {
+            let selection_area = Rect {
+                x: inner_area.x + start_x,
+                y: inner_area.y,
+                width: selection_width.min(bar_width - start_x),
+                height: 1,
+            };
+
+            // Draw selection highlight
+            let selection = Block::default().style(Style::default().bg(Color::DarkGray));
+            f.render_widget(selection, selection_area);
+        }
     }
 }

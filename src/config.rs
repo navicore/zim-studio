@@ -39,6 +39,8 @@ fn default_gitignore() -> Vec<String> {
         "*.wav".to_string(),
         "*.flac".to_string(),
         "*.aiff".to_string(),
+        "*.aif".to_string(),
+        "*.asd".to_string(),
         "*.mp3".to_string(),
         "*.m4a".to_string(),
         // Visual media files

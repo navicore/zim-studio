@@ -154,6 +154,7 @@ impl Browser {
         self.filter_items();
     }
 
+    #[allow(dead_code)]
     pub fn clear_search(&mut self) {
         self.search_query.clear();
         self.filter_items();

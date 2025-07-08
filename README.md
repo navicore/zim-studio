@@ -2,19 +2,18 @@
 [![CI](https://github.com/navicore/zim-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci.yml)
 [![Release with Auto Version (PAT)](https://github.com/navicore/zim-studio/actions/workflows/release.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/release.yml)
 
-# ZIM - Terminal-Based Audio Project Scaffold and Metadata System
+# ZIM - Terminal-Based Audio Studio Tools
 
-*A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music*
+*A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music with Integrated Audio Player*
 
-The main two functions of this tool are:
-  1. Initialize a project structure of directories and placeholder README.md files
-       for each new project as needed
-  2. Generate sidecar Metadata files for all audio media
+ZIM Studio provides three main functions:
+  1. **Project Management**: Initialize a project structure of directories and placeholder README.md files
+  2. **Metadata System**: Generate searchable sidecar files for all audio media
+  3. **Audio Player** (optional): Fast sample browsing, auditioning, and chopping with TUI interface
 
-The sidecar format is yaml embedded in markdown.  It isn't as bad as it sounds.
-The `yaml` has facts about the track or project and the `markdown` lets the user
-create long-form notes about the work, links to inspiration, `TODO` checklists,
-etc...
+The sidecar format is YAML embedded in markdown, providing both structured metadata 
+and free-form notes. The YAML contains facts about the track while the markdown 
+enables long-form notes, links to inspiration, TODO checklists, etc.
 
 See [example sidecar file](examples/sidecar-example.md) for a complete example.
 
@@ -32,7 +31,11 @@ The motivation for creating `zim` is twofold:
 ## Installation
 
 ```bash
+# Install with just the project management and metadata features
 cargo install zim-studio
+
+# Install with the audio player feature included
+cargo install zim-studio --features player
 ```
 
 ## Quick Start
@@ -122,6 +125,119 @@ make clippy     # Run lints
 make test       # Run tests
 make check      # Check compilation
 ```
+
+## Audio Player User Guide
+
+The optional audio player provides a fast, keyboard-driven interface for browsing, auditioning, and editing audio samples directly from the terminal.
+
+### Launching the Player
+
+```bash
+# Launch with no file (opens browser)
+zim player
+
+# Launch with a specific audio file
+zim player path/to/audio.wav
+```
+
+### Main Interface
+
+![IMAGE: Screenshot of main player interface with oscilloscope and controls](docs/player_main.png)
+
+The player interface consists of:
+- **Title Bar**: Shows "🎵 ZIM Player"
+- **File Info & LEDs**: Current file name and stereo level indicators
+- **Progress Bar**: Playback position with mark in/out indicators
+- **Oscilloscope**: Real-time waveform visualization (when window is tall enough)
+- **Control Hints**: Two rows of keyboard shortcuts
+
+### Keyboard Controls
+
+#### Playback Controls
+- `[space]` - Play/Pause toggle
+- `[←]` - Seek backward 5 seconds  
+- `[→]` - Seek forward 5 seconds
+
+#### Mark & Loop Controls
+- `[i]` - Set mark in at current position
+- `[o]` - Set mark out at current position
+- `[x]` - Clear all marks
+- `[l]` - Toggle loop playback of marked selection
+
+#### File Operations
+- `[/]` - Open file browser
+- `[s]` - Save/export (full file or marked selection)
+- `[q]` - Quit player
+
+### File Browser
+
+![IMAGE: Screenshot of telescope-style file browser](docs/player_file_browser.png)
+
+The built-in file browser searches through your audio files using their sidecar `.md` metadata:
+
+1. Press `/` to open the browser
+2. Start typing to search - it searches within the markdown content of sidecar files
+3. Use `[↑/↓]` to navigate results
+4. Press `[Enter]` to load the selected file
+5. Press `[Esc]` to close browser
+
+**Note**: The browser displays audio files but searches their `.md` sidecar content. For example, if you have `kick.wav` with `kick.wav.md` containing "punchy 808 style", searching for "808" will find this file.
+
+### Mark In/Out & Looping
+
+![IMAGE: Screenshot showing marks on progress bar](docs/player_marks.png)
+
+The mark feature lets you select a portion of the audio:
+
+1. Play the file and press `[i]` at the desired start point
+2. Press `[o]` at the desired end point
+3. The selection appears highlighted on the progress bar
+4. Press `[l]` to loop the selection continuously
+5. The time display shows selection duration in brackets: `[3.5s]`
+
+### Save Dialog
+
+![IMAGE: Screenshot of save dialog with directory browser](docs/player_save.png)
+
+When saving (`[s]`), the save dialog provides:
+
+- **Directory Browser**: Navigate folders with `[↑/↓]` and `[Enter]`
+- **Filename Field**: Editable with smart naming for edits
+- **Tab Navigation**: Use `[Tab]` to switch between directory list and filename
+- **Smart Extensions**: 
+  - Selections always save as `.wav` (even from FLAC sources)
+  - Full file saves preserve original format
+
+Example auto-generated filenames:
+- First edit: `original_edit.wav`
+- Subsequent edits: `original_edit_2.wav`, `original_edit_3.wav`, etc.
+
+### LED Level Indicators
+
+[IMAGE: Close-up of LED indicators showing different levels]
+
+The stereo LED indicators show real-time audio levels:
+- **L (Left)**: Green LEDs - dim → medium → bright → red (clipping)
+- **R (Right)**: Orange LEDs - dim → medium → bright → red (clipping)
+- **Symbols**: ○ (off/quiet) → ◐ (medium) → ● (loud)
+
+### Supported Formats
+
+- **WAV**: 8, 16, 24, and 32-bit
+- **FLAC**: All bit depths (converted to 16-bit WAV when saving selections)
+
+### Tips & Workflow
+
+1. **Quick Sample Chopping**: Load file → mark in/out → save = done
+2. **Preview Before Save**: Use `[l]` to loop your selection before saving
+3. **Rapid Browsing**: The browser remembers your search, making it fast to audition similar samples
+4. **No Mouse Needed**: Everything is keyboard-driven for speed
+
+### Troubleshooting
+
+- **No Audio**: Check system audio output settings
+- **Browser Not Finding Files**: Ensure `.md` sidecar files exist (run `zim update`)
+- **Visual Glitches**: Resize terminal window or restart player
 
 ## License
 
