@@ -1,7 +1,7 @@
 //! ZIM Studio - Terminal-based audio project management and player.
 //!
 //! This application provides two main functionalities:
-//! 
+//!
 //! 1. **Project Management**: A scaffolding system for organizing audio projects
 //!    with consistent folder structures, metadata management via markdown sidecar
 //!    files, and YAML frontmatter validation.
