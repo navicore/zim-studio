@@ -9,6 +9,7 @@ use std::{error::Error, io, time::Duration};
 
 use super::audio::AudioEngine;
 use super::browser::Browser;
+use super::save_dialog::SaveDialog;
 use super::ui;
 use super::waveform::WaveformBuffer;
 use std::sync::mpsc;
@@ -24,6 +25,13 @@ pub struct App {
     pub right_level: f32,
     pub is_stereo: bool,
     pub browser: Browser,
+    pub playback_position: f32, // 0.0 to 1.0
+    pub duration: Option<std::time::Duration>,
+    pub mark_in: Option<f32>,  // 0.0 to 1.0
+    pub mark_out: Option<f32>, // 0.0 to 1.0
+    edit_counter: u32,         // Track number of edits this session
+    pub save_dialog: Option<SaveDialog>,
+    pub is_looping: bool, // Whether we're looping the selection
 }
 
 impl App {
@@ -39,6 +47,13 @@ impl App {
             right_level: 0.0,
             is_stereo: false,
             browser: Browser::new(),
+            playback_position: 0.0,
+            duration: None,
+            mark_in: None,
+            mark_out: None,
+            edit_counter: 0,
+            save_dialog: None,
+            is_looping: false,
         }
     }
 
@@ -54,10 +69,11 @@ impl App {
         if let Some(engine) = &mut self.audio_engine {
             engine.load_file(std::path::Path::new(path))?;
 
-            // Update channel info
+            // Update channel info and duration
             if let Some(info) = &engine.info {
                 self.is_stereo = info.channels > 1;
             }
+            self.duration = engine.duration;
 
             self.current_file = Some(path.to_string());
 
@@ -70,11 +86,15 @@ impl App {
     }
 
     pub fn toggle_playback(&mut self) {
-        if let Some(engine) = &self.audio_engine {
+        if let Some(engine) = &mut self.audio_engine {
             if self.is_playing {
                 engine.pause();
                 self.is_playing = false;
             } else {
+                // If at 100%, restart from beginning
+                if self.playback_position >= 0.99 {
+                    let _ = engine.seek_relative(-self.duration.unwrap_or_default().as_secs_f32());
+                }
                 engine.play();
                 self.is_playing = true;
             }
@@ -127,6 +147,58 @@ impl App {
             }
         }
 
+        // Update playback position and handle looping
+        let mut need_loop_seek = None;
+        let mut should_stop = false;
+
+        if let Some(engine) = &self.audio_engine {
+            self.playback_position = engine.get_progress();
+
+            // Check if we've reached the end (not looping)
+            if !self.is_looping && self.is_playing && self.playback_position >= 1.0 {
+                should_stop = true;
+            }
+
+            // Check if we need to loop
+            if self.is_looping && self.is_playing {
+                if let (Some(mark_in), Some(mark_out)) = (self.mark_in, self.mark_out) {
+                    let loop_start = mark_in.min(mark_out);
+                    let loop_end = mark_in.max(mark_out);
+
+                    // Check if we've reached the end of the loop
+                    if self.playback_position >= loop_end {
+                        // Calculate offset to jump back to start
+                        if let Some(duration) = self.duration {
+                            let current_seconds = duration.as_secs_f32() * self.playback_position;
+                            let start_seconds = duration.as_secs_f32() * loop_start;
+                            need_loop_seek = Some(start_seconds - current_seconds);
+                        }
+                    }
+                    // Check if we're before the loop start (can happen after seeking)
+                    else if self.playback_position < loop_start {
+                        if let Some(duration) = self.duration {
+                            let current_seconds = duration.as_secs_f32() * self.playback_position;
+                            let start_seconds = duration.as_secs_f32() * loop_start;
+                            need_loop_seek = Some(start_seconds - current_seconds);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Stop playback if we've reached the end
+        if should_stop {
+            self.is_playing = false;
+            if let Some(engine) = &self.audio_engine {
+                engine.pause();
+            }
+        }
+
+        // Apply loop seek if needed (now we can get mutable reference)
+        if let (Some(offset), Some(engine)) = (need_loop_seek, &mut self.audio_engine) {
+            let _ = engine.seek_relative(offset);
+        }
+
         // Decay levels when not receiving samples
         if self.is_playing {
             self.left_level *= 0.99; // Slower decay for better visibility
@@ -135,6 +207,248 @@ impl App {
             self.left_level = 0.0;
             self.right_level = 0.0;
         }
+    }
+
+    pub fn set_mark_in(&mut self) {
+        self.mark_in = Some(self.playback_position);
+        info!("Mark in set at {:.1}%", self.playback_position * 100.0);
+    }
+
+    pub fn set_mark_out(&mut self) {
+        self.mark_out = Some(self.playback_position);
+        info!("Mark out set at {:.1}%", self.playback_position * 100.0);
+    }
+
+    pub fn clear_marks(&mut self) {
+        self.mark_in = None;
+        self.mark_out = None;
+        self.is_looping = false; // Stop looping when marks are cleared
+        info!("Marks cleared");
+    }
+
+    pub fn toggle_loop(&mut self) {
+        if self.mark_in.is_some() && self.mark_out.is_some() {
+            self.is_looping = !self.is_looping;
+            info!(
+                "Loop {}",
+                if self.is_looping {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            );
+
+            // If starting loop, jump to mark in position
+            if self.is_looping {
+                if let (Some(mark_in), Some(duration), Some(engine)) =
+                    (self.mark_in, self.duration, &mut self.audio_engine)
+                {
+                    let start_seconds = duration.as_secs_f32() * mark_in;
+                    let current_seconds = duration.as_secs_f32() * self.playback_position;
+                    let offset = start_seconds - current_seconds;
+                    let _ = engine.seek_relative(offset);
+                }
+            }
+        } else {
+            info!("Cannot loop without both marks set");
+        }
+    }
+
+    pub fn get_selection_duration(&self) -> Option<std::time::Duration> {
+        if let (Some(mark_in), Some(mark_out), Some(duration)) =
+            (self.mark_in, self.mark_out, self.duration)
+        {
+            let start_secs = duration.as_secs_f32() * mark_in;
+            let end_secs = duration.as_secs_f32() * mark_out;
+            let selection_secs = (end_secs - start_secs).abs();
+            Some(std::time::Duration::from_secs_f32(selection_secs))
+        } else {
+            None
+        }
+    }
+
+    pub fn open_save_dialog(&mut self) {
+        if let Some(current_file) = &self.current_file {
+            let path = std::path::Path::new(current_file);
+            let parent = path.parent().unwrap_or(std::path::Path::new("."));
+
+            // Generate suggested filename
+            let base_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("audio");
+            let source_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("wav");
+            
+            // Always suggest WAV for selections (since we convert FLAC to WAV)
+            // For full file saves, keep original extension
+            let has_selection = self.mark_in.is_some() && self.mark_out.is_some();
+            let extension = if has_selection {
+                "wav"  // Always WAV for selections
+            } else {
+                source_extension  // Keep original for full file copies
+            };
+
+            let suggested_name = if has_selection {
+                if self.edit_counter == 0 {
+                    format!("{}_edit.{}", base_name, extension)
+                } else {
+                    format!("{}_edit_{}.{}", base_name, self.edit_counter + 1, extension)
+                }
+            } else {
+                format!("{}.{}", base_name, extension)
+            };
+
+            self.save_dialog = Some(SaveDialog::new(
+                parent.to_path_buf(),
+                suggested_name,
+                has_selection,
+            ));
+
+            info!(
+                "Opened save dialog with filename: {}",
+                self.save_dialog.as_ref().unwrap().filename
+            );
+        }
+    }
+    
+    pub fn save_audio(&self, path: std::path::PathBuf, save_selection: bool) -> Result<(), Box<dyn Error>> {
+        if let Some(current_file) = &self.current_file {
+            if save_selection && self.mark_in.is_some() && self.mark_out.is_some() {
+                // Save selection
+                self.save_selection(current_file, path)
+            } else {
+                // Save full file (just copy)
+                std::fs::copy(current_file, &path)?;
+                info!("Copied full file to: {:?}", path);
+                Ok(())
+            }
+        } else {
+            Err("No file loaded".into())
+        }
+    }
+    
+    fn save_selection(&self, source_path: &str, dest_path: std::path::PathBuf) -> Result<(), Box<dyn Error>> {
+        let (mark_in, mark_out) = match (self.mark_in, self.mark_out) {
+            (Some(a), Some(b)) => (a.min(b), a.max(b)),
+            _ => return Err("No selection marks set".into()),
+        };
+        
+        // Determine SOURCE format from extension
+        let source_ext = std::path::Path::new(source_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+        
+        // Always save as WAV for now
+        match source_ext.as_str() {
+            "wav" => self.save_wav_selection(source_path, dest_path, mark_in, mark_out),
+            "flac" => self.save_flac_to_wav_selection(source_path, dest_path, mark_in, mark_out),
+            _ => Err(format!("Unsupported source format: {}", source_ext).into()),
+        }
+    }
+    
+    fn save_wav_selection(&self, source_path: &str, dest_path: std::path::PathBuf, start: f32, end: f32) -> Result<(), Box<dyn Error>> {
+        use hound::{WavReader, WavWriter};
+        use std::fs::File;
+        use std::io::BufReader;
+        
+        // Open source file
+        let mut reader = WavReader::new(BufReader::new(File::open(source_path)?))?;
+        let spec = reader.spec();
+        
+        // Calculate sample range
+        let total_samples = reader.len() as usize;
+        let start_sample = (start * total_samples as f32) as usize;
+        let end_sample = (end * total_samples as f32) as usize;
+        let samples_to_write = end_sample - start_sample;
+        
+        // Create output file
+        let mut writer = WavWriter::create(&dest_path, spec)?;
+        
+        // Read and write samples based on bit depth
+        match spec.bits_per_sample {
+            16 => {
+                let samples: Vec<i16> = reader.samples::<i16>()
+                    .skip(start_sample)
+                    .take(samples_to_write)
+                    .collect::<Result<Vec<_>, _>>()?;
+                for sample in samples {
+                    writer.write_sample(sample)?;
+                }
+            }
+            24 | 32 => {
+                let samples: Vec<i32> = reader.samples::<i32>()
+                    .skip(start_sample)
+                    .take(samples_to_write)
+                    .collect::<Result<Vec<_>, _>>()?;
+                for sample in samples {
+                    writer.write_sample(sample)?;
+                }
+            }
+            8 => {
+                let samples: Vec<i8> = reader.samples::<i8>()
+                    .skip(start_sample)
+                    .take(samples_to_write)
+                    .collect::<Result<Vec<_>, _>>()?;
+                for sample in samples {
+                    writer.write_sample(sample)?;
+                }
+            }
+            _ => return Err(format!("Unsupported bit depth: {}", spec.bits_per_sample).into()),
+        }
+        
+        writer.finalize()?;
+        info!("Saved WAV selection to: {:?}", dest_path);
+        Ok(())
+    }
+    
+    fn save_flac_to_wav_selection(&self, source_path: &str, dest_path: std::path::PathBuf, start: f32, end: f32) -> Result<(), Box<dyn Error>> {
+        use claxon::FlacReader;
+        use hound::{WavWriter, WavSpec};
+        
+        // Open FLAC file
+        let mut reader = FlacReader::open(source_path)?;
+        let info = reader.streaminfo();
+        
+        // Calculate sample range
+        let total_samples = info.samples.unwrap_or(0) as usize;
+        let start_sample = (start * total_samples as f32) as usize;
+        let end_sample = (end * total_samples as f32) as usize;
+        let _samples_to_write = end_sample - start_sample;
+        
+        // Create WAV spec from FLAC info
+        let spec = WavSpec {
+            channels: info.channels as u16,
+            sample_rate: info.sample_rate,
+            bits_per_sample: 16, // Convert to 16-bit for compatibility
+            sample_format: hound::SampleFormat::Int,
+        };
+        
+        // Create output WAV file
+        let mut writer = WavWriter::create(&dest_path, spec)?;
+        
+        // Read and convert samples
+        let mut sample_count = 0;
+        for sample in reader.samples() {
+            if sample_count >= start_sample && sample_count < end_sample {
+                let sample = sample?;
+                // Convert from FLAC bit depth to 16-bit
+                let sample_i16 = match info.bits_per_sample {
+                    16 => sample as i16,
+                    24 => (sample >> 8) as i16,
+                    32 => (sample >> 16) as i16,
+                    _ => (sample >> (info.bits_per_sample - 16)) as i16,
+                };
+                writer.write_sample(sample_i16)?;
+            }
+            sample_count += 1;
+            
+            if sample_count >= end_sample {
+                break;
+            }
+        }
+        
+        writer.finalize()?;
+        info!("Saved FLAC selection as WAV to: {:?}", dest_path);
+        Ok(())
     }
 }
 
@@ -209,7 +523,54 @@ fn run_app<B: ratatui::backend::Backend>(
         // Poll for events with a short timeout to allow continuous rendering
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
-                if app.browser.is_active {
+                if let Some(ref mut save_dialog) = app.save_dialog {
+                    // Handle save dialog navigation
+                    use super::save_dialog::SaveDialogFocus;
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.save_dialog = None;
+                        }
+                        KeyCode::Tab => {
+                            save_dialog.toggle_focus();
+                        }
+                        KeyCode::Up => {
+                            if save_dialog.focus == SaveDialogFocus::DirectoryList {
+                                save_dialog.navigate_up();
+                            }
+                        }
+                        KeyCode::Down => {
+                            if save_dialog.focus == SaveDialogFocus::DirectoryList {
+                                save_dialog.navigate_down();
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if save_dialog.focus == SaveDialogFocus::DirectoryList {
+                                save_dialog.enter_directory();
+                            } else {
+                                // Save the file
+                                let save_path = save_dialog.get_full_path();
+                                let has_selection = save_dialog.has_selection;
+                                info!("Saving to: {:?}", save_path);
+                                
+                                // Perform the save
+                                if let Err(e) = app.save_audio(save_path, has_selection) {
+                                    log::error!("Failed to save audio: {}", e);
+                                } else {
+                                    app.edit_counter += 1;
+                                }
+                                
+                                app.save_dialog = None;
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            save_dialog.pop_char();
+                        }
+                        KeyCode::Char(c) => {
+                            save_dialog.push_char(c);
+                        }
+                        _ => {}
+                    }
+                } else if app.browser.is_active {
                     // Handle browser navigation
                     match key.code {
                         KeyCode::Esc => app.browser.toggle(),
@@ -239,6 +600,31 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('q') => app.should_quit = true,
                         KeyCode::Char(' ') => app.toggle_playback(),
                         KeyCode::Char('/') => app.browser.toggle(),
+                        KeyCode::Left => {
+                            if let Some(engine) = &mut app.audio_engine {
+                                let _ = engine.seek_relative(-5.0); // Seek back 5 seconds
+                            }
+                        }
+                        KeyCode::Right => {
+                            if let Some(engine) = &mut app.audio_engine {
+                                let _ = engine.seek_relative(5.0); // Seek forward 5 seconds
+                            }
+                        }
+                        KeyCode::Char('[') | KeyCode::Char('i') => {
+                            app.set_mark_in();
+                        }
+                        KeyCode::Char(']') | KeyCode::Char('o') => {
+                            app.set_mark_out();
+                        }
+                        KeyCode::Char('x') => {
+                            app.clear_marks();
+                        }
+                        KeyCode::Char('s') => {
+                            app.open_save_dialog();
+                        }
+                        KeyCode::Char('l') => {
+                            app.toggle_loop();
+                        }
                         _ => {}
                     }
                 }
