@@ -92,7 +92,7 @@ impl AudioEngine {
         reader: hound::WavReader<BufReader<File>>,
     ) -> Result<(), Box<dyn Error>> {
         let spec = reader.spec();
-        
+
         log::info!(
             "WAV format: {:?}, sample format: {:?}",
             spec,
@@ -326,7 +326,7 @@ struct WavSource {
     sample_rate: u32,
     channels: u16,
     bits_per_sample: u16,
-    current_samples: Vec<i32>,  // Use i32 to handle up to 24-bit
+    current_samples: Vec<i32>, // Use i32 to handle up to 24-bit
     position: usize,
     monitor_buffer: Vec<f32>,
     samples_played: Arc<AtomicUsize>,

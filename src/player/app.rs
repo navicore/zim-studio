@@ -185,7 +185,7 @@ impl App {
                 }
             }
         }
-        
+
         // Stop playback if we've reached the end
         if should_stop {
             self.is_playing = false;
@@ -275,14 +275,14 @@ impl App {
             // Generate suggested filename
             let base_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("audio");
             let source_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("wav");
-            
+
             // Always suggest WAV for selections (since we convert FLAC to WAV)
             // For full file saves, keep original extension
             let has_selection = self.mark_in.is_some() && self.mark_out.is_some();
             let extension = if has_selection {
-                "wav"  // Always WAV for selections
+                "wav" // Always WAV for selections
             } else {
-                source_extension  // Keep original for full file copies
+                source_extension // Keep original for full file copies
             };
 
             let suggested_name = if has_selection {
@@ -307,8 +307,12 @@ impl App {
             );
         }
     }
-    
-    pub fn save_audio(&self, path: std::path::PathBuf, save_selection: bool) -> Result<(), Box<dyn Error>> {
+
+    pub fn save_audio(
+        &self,
+        path: std::path::PathBuf,
+        save_selection: bool,
+    ) -> Result<(), Box<dyn Error>> {
         if let Some(current_file) = &self.current_file {
             if save_selection && self.mark_in.is_some() && self.mark_out.is_some() {
                 // Save selection
@@ -323,20 +327,24 @@ impl App {
             Err("No file loaded".into())
         }
     }
-    
-    fn save_selection(&self, source_path: &str, dest_path: std::path::PathBuf) -> Result<(), Box<dyn Error>> {
+
+    fn save_selection(
+        &self,
+        source_path: &str,
+        dest_path: std::path::PathBuf,
+    ) -> Result<(), Box<dyn Error>> {
         let (mark_in, mark_out) = match (self.mark_in, self.mark_out) {
             (Some(a), Some(b)) => (a.min(b), a.max(b)),
             _ => return Err("No selection marks set".into()),
         };
-        
+
         // Determine SOURCE format from extension
         let source_ext = std::path::Path::new(source_path)
             .extension()
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
-        
+
         // Always save as WAV for now
         match source_ext.as_str() {
             "wav" => self.save_wav_selection(source_path, dest_path, mark_in, mark_out),
@@ -344,29 +352,36 @@ impl App {
             _ => Err(format!("Unsupported source format: {}", source_ext).into()),
         }
     }
-    
-    fn save_wav_selection(&self, source_path: &str, dest_path: std::path::PathBuf, start: f32, end: f32) -> Result<(), Box<dyn Error>> {
+
+    fn save_wav_selection(
+        &self,
+        source_path: &str,
+        dest_path: std::path::PathBuf,
+        start: f32,
+        end: f32,
+    ) -> Result<(), Box<dyn Error>> {
         use hound::{WavReader, WavWriter};
         use std::fs::File;
         use std::io::BufReader;
-        
+
         // Open source file
         let mut reader = WavReader::new(BufReader::new(File::open(source_path)?))?;
         let spec = reader.spec();
-        
+
         // Calculate sample range
         let total_samples = reader.len() as usize;
         let start_sample = (start * total_samples as f32) as usize;
         let end_sample = (end * total_samples as f32) as usize;
         let samples_to_write = end_sample - start_sample;
-        
+
         // Create output file
         let mut writer = WavWriter::create(&dest_path, spec)?;
-        
+
         // Read and write samples based on bit depth
         match spec.bits_per_sample {
             16 => {
-                let samples: Vec<i16> = reader.samples::<i16>()
+                let samples: Vec<i16> = reader
+                    .samples::<i16>()
                     .skip(start_sample)
                     .take(samples_to_write)
                     .collect::<Result<Vec<_>, _>>()?;
@@ -375,7 +390,8 @@ impl App {
                 }
             }
             24 | 32 => {
-                let samples: Vec<i32> = reader.samples::<i32>()
+                let samples: Vec<i32> = reader
+                    .samples::<i32>()
                     .skip(start_sample)
                     .take(samples_to_write)
                     .collect::<Result<Vec<_>, _>>()?;
@@ -384,7 +400,8 @@ impl App {
                 }
             }
             8 => {
-                let samples: Vec<i8> = reader.samples::<i8>()
+                let samples: Vec<i8> = reader
+                    .samples::<i8>()
                     .skip(start_sample)
                     .take(samples_to_write)
                     .collect::<Result<Vec<_>, _>>()?;
@@ -394,26 +411,32 @@ impl App {
             }
             _ => return Err(format!("Unsupported bit depth: {}", spec.bits_per_sample).into()),
         }
-        
+
         writer.finalize()?;
         info!("Saved WAV selection to: {:?}", dest_path);
         Ok(())
     }
-    
-    fn save_flac_to_wav_selection(&self, source_path: &str, dest_path: std::path::PathBuf, start: f32, end: f32) -> Result<(), Box<dyn Error>> {
+
+    fn save_flac_to_wav_selection(
+        &self,
+        source_path: &str,
+        dest_path: std::path::PathBuf,
+        start: f32,
+        end: f32,
+    ) -> Result<(), Box<dyn Error>> {
         use claxon::FlacReader;
-        use hound::{WavWriter, WavSpec};
-        
+        use hound::{WavSpec, WavWriter};
+
         // Open FLAC file
         let mut reader = FlacReader::open(source_path)?;
         let info = reader.streaminfo();
-        
+
         // Calculate sample range
         let total_samples = info.samples.unwrap_or(0) as usize;
         let start_sample = (start * total_samples as f32) as usize;
         let end_sample = (end * total_samples as f32) as usize;
         let _samples_to_write = end_sample - start_sample;
-        
+
         // Create WAV spec from FLAC info
         let spec = WavSpec {
             channels: info.channels as u16,
@@ -421,10 +444,10 @@ impl App {
             bits_per_sample: 16, // Convert to 16-bit for compatibility
             sample_format: hound::SampleFormat::Int,
         };
-        
+
         // Create output WAV file
         let mut writer = WavWriter::create(&dest_path, spec)?;
-        
+
         // Read and convert samples
         let mut sample_count = 0;
         for sample in reader.samples() {
@@ -440,12 +463,12 @@ impl App {
                 writer.write_sample(sample_i16)?;
             }
             sample_count += 1;
-            
+
             if sample_count >= end_sample {
                 break;
             }
         }
-        
+
         writer.finalize()?;
         info!("Saved FLAC selection as WAV to: {:?}", dest_path);
         Ok(())
@@ -551,14 +574,14 @@ fn run_app<B: ratatui::backend::Backend>(
                                 let save_path = save_dialog.get_full_path();
                                 let has_selection = save_dialog.has_selection;
                                 info!("Saving to: {:?}", save_path);
-                                
+
                                 // Perform the save
                                 if let Err(e) = app.save_audio(save_path, has_selection) {
                                     log::error!("Failed to save audio: {}", e);
                                 } else {
                                     app.edit_counter += 1;
                                 }
-                                
+
                                 app.save_dialog = None;
                             }
                         }
