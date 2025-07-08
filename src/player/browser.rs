@@ -61,7 +61,7 @@ impl Browser {
             .iter()
             .filter(|i| !i.metadata.content.is_empty())
             .count();
-        info!("  {} have sidecar metadata", with_sidecar);
+        info!("  {with_sidecar} have sidecar metadata");
 
         Ok(())
     }
@@ -83,7 +83,7 @@ impl Browser {
             if path.is_dir() {
                 // Recursively scan subdirectories
                 if let Err(e) = self.scan_directory_recursive(&path) {
-                    warn!("Could not scan directory {:?}: {}", path, e);
+                    warn!("Could not scan directory {path:?}: {e}");
                 }
             } else if path.is_file() {
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -100,7 +100,7 @@ impl Browser {
                             sidecar.as_mut_os_string().push(".md");
 
                             if sidecar.exists() {
-                                debug!("Found sidecar: {:?}", sidecar);
+                                debug!("Found sidecar: {sidecar:?}");
                                 audio_file.sidecar_path = Some(sidecar.clone());
 
                                 // Read and parse sidecar content
@@ -165,7 +165,7 @@ impl Browser {
             self.filtered_items = self.items.iter().map(|item| (item.clone(), None)).collect();
         } else {
             let query = self.search_query.to_lowercase();
-            debug!("Filtering with query: '{}'", query);
+            debug!("Filtering with query: '{query}'");
 
             // Score each item and find matching context
             let mut scored_items: Vec<(AudioFile, i64, Option<String>)> = self
@@ -204,7 +204,7 @@ impl Browser {
 
                     if best_score.is_none() && filename.to_lowercase().contains(&query) {
                         best_score = Some(50); // Lower score for filename matches
-                        debug!("Filename match for {}", filename);
+                        debug!("Filename match for {filename}");
                     }
 
                     best_score.map(|score| (item.clone(), score, context))
@@ -292,12 +292,15 @@ fn parse_sidecar_content(content: &str) -> FileMetadata {
         let line = line.trim();
 
         // Extract title from H1
-        if line.starts_with("# ") {
-            metadata.title = line[2..].trim().to_string();
+        if let Some(title) = line.strip_prefix("# ") {
+            metadata.title = title.trim().to_string();
         }
         // Extract tags
-        else if line.starts_with("- Tags:") || line.starts_with("- tags:") {
-            let tags_str = line[7..].trim();
+        else if let Some(tags_str) = line
+            .strip_prefix("- Tags:")
+            .or_else(|| line.strip_prefix("- tags:"))
+        {
+            let tags_str = tags_str.trim();
             metadata.tags = tags_str
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -377,7 +380,7 @@ pub fn draw_browser(f: &mut Frame, area: Rect, browser: &Browser) {
                 String::new()
             };
 
-            let content = format!("{}{}", filename, tags);
+            let content = format!("{filename}{tags}");
 
             let style = if is_selected {
                 Style::default()
@@ -432,12 +435,12 @@ fn draw_preview(f: &mut Frame, area: Rect, browser: &Browser) {
         } else if !item.metadata.content.is_empty() {
             // Show beginning of file if no specific match
             let preview_len = 200;
-            let preview = if item.metadata.content.len() > preview_len {
+
+            if item.metadata.content.len() > preview_len {
                 format!("{}...", &item.metadata.content[..preview_len])
             } else {
                 item.metadata.content.clone()
-            };
-            preview
+            }
         } else {
             "No metadata available".to_string()
         };

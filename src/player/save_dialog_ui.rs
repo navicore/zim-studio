@@ -79,7 +79,7 @@ pub fn draw_save_dialog(f: &mut Frame, area: Rect, dialog: &SaveDialog) {
             };
 
             let prefix = if dir == ".." { "↑ " } else { "📁 " };
-            ListItem::new(format!("{}{}", prefix, dir)).style(style)
+            ListItem::new(format!("{prefix}{dir}")).style(style)
         })
         .collect();
 

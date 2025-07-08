@@ -10,6 +10,9 @@ use std::sync::{
 };
 use std::time::Duration;
 
+// Type alias for the audio engine creation result
+type AudioEngineResult = Result<(AudioEngine, mpsc::Receiver<Vec<f32>>), Box<dyn Error>>;
+
 #[allow(dead_code)]
 pub struct AudioInfo {
     pub channels: u16,
@@ -29,7 +32,7 @@ pub struct AudioEngine {
 }
 
 impl AudioEngine {
-    pub fn new() -> Result<(Self, mpsc::Receiver<Vec<f32>>), Box<dyn Error>> {
+    pub fn new() -> AudioEngineResult {
         let (stream, stream_handle) = OutputStream::try_default()?;
         let sink = Sink::try_new(&stream_handle)?;
         let (samples_tx, samples_rx) = mpsc::channel();
@@ -81,7 +84,7 @@ impl AudioEngine {
             "flac" => {
                 self.play_flac(path)?;
             }
-            _ => return Err(format!("Unsupported audio format: {}", ext).into()),
+            _ => return Err(format!("Unsupported audio format: {ext}").into()),
         }
 
         Ok(())
@@ -229,7 +232,7 @@ impl AudioEngine {
             "flac" => {
                 self.play_flac_from_position(path, start_sample)?;
             }
-            _ => return Err(format!("Unsupported audio format: {}", ext).into()),
+            _ => return Err(format!("Unsupported audio format: {ext}").into()),
         }
 
         Ok(())
@@ -252,7 +255,7 @@ impl AudioEngine {
         // Play through rodio
         self.sink.append(source);
 
-        log::info!("Playing WAV from sample: {}", start_sample);
+        log::info!("Playing WAV from sample: {start_sample}");
 
         Ok(())
     }
@@ -274,7 +277,7 @@ impl AudioEngine {
         // Play through rodio
         self.sink.append(source);
 
-        log::info!("Playing FLAC from sample: {}", start_sample);
+        log::info!("Playing FLAC from sample: {start_sample}");
 
         Ok(())
     }
@@ -393,7 +396,7 @@ impl Iterator for WavSource {
         let count = self.samples_played.fetch_add(1, Ordering::Relaxed);
         if count % 44100 == 0 {
             // Log every second (assuming 44.1kHz)
-            log::debug!("Samples played: {}", count);
+            log::debug!("Samples played: {count}");
         }
 
         // Convert to i16 based on bit depth
@@ -499,7 +502,7 @@ impl Iterator for FlacSource {
         let count = self.samples_played.fetch_add(1, Ordering::Relaxed);
         if count % 44100 == 0 {
             // Log every second (assuming 44.1kHz)
-            log::debug!("Samples played: {}", count);
+            log::debug!("Samples played: {count}");
         }
 
         // Convert to i16 based on bit depth

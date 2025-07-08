@@ -159,7 +159,7 @@ fn draw_file_info_with_leds(f: &mut Frame, area: Rect, app: &App) {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(file);
-        format!("Loaded: {}", filename)
+        format!("Loaded: {filename}")
     } else {
         "No file selected - Pass a file path to play".to_string()
     };
@@ -212,7 +212,7 @@ fn get_led_char(level: f32) -> &'static str {
 }
 
 fn get_led_color(level: f32, is_left: bool) -> Color {
-    let base_color = if is_left {
+    if is_left {
         // Green for left channel
         if level > 0.9 {
             Color::Rgb(255, 100, 100) // Red when clipping
@@ -234,8 +234,7 @@ fn get_led_color(level: f32, is_left: bool) -> Color {
         } else {
             Color::Rgb(100, 50, 0) // Very dim
         }
-    };
-    base_color
+    }
 }
 
 fn draw_oscilloscope(f: &mut Frame, area: Rect, app: &App) {
@@ -353,15 +352,13 @@ fn draw_progress_bar(f: &mut Frame, area: Rect, app: &App) {
         let total_mins = total_secs / 60;
         let total_secs = total_secs % 60;
 
-        let mut time_str = format!(
-            "{:02}:{:02} / {:02}:{:02}",
-            current_mins, current_secs, total_mins, total_secs
-        );
+        let mut time_str =
+            format!("{current_mins:02}:{current_secs:02} / {total_mins:02}:{total_secs:02}");
 
         // Add selection duration if marks are set
         if let Some(selection_duration) = app.get_selection_duration() {
             let sel_secs = selection_duration.as_secs_f32();
-            time_str.push_str(&format!(" [{:.1}s]", sel_secs));
+            time_str.push_str(&format!(" [{sel_secs:.1}s]"));
         }
 
         time_str
@@ -407,7 +404,7 @@ fn draw_progress_with_marks(f: &mut Frame, area: Rect, app: &App) {
         .block(Block::default().borders(Borders::ALL))
         .gauge_style(Style::default().fg(Color::Cyan))
         .percent(progress_percent)
-        .label(Span::styled(format!("{}%", progress_percent), label_style));
+        .label(Span::styled(format!("{progress_percent}%"), label_style));
 
     f.render_widget(progress_widget, area);
 
