@@ -1,3 +1,20 @@
+//! ZIM Studio - Terminal-based audio project management and player.
+//!
+//! This application provides two main functionalities:
+//!
+//! 1. **Project Management**: A scaffolding system for organizing audio projects
+//!    with consistent folder structures, metadata management via markdown sidecar
+//!    files, and YAML frontmatter validation.
+//!
+//! 2. **Audio Player** (optional feature): A terminal-based audio player with
+//!    waveform visualization, designed for fast sample browsing and editing
+//!    workflows. The player supports mark/loop functionality and can export
+//!    selections as new files.
+//!
+//! The tool is designed for musicians and audio engineers who prefer working
+//! in the terminal and want a fast, keyboard-driven workflow for managing and
+//! auditioning audio files.
+
 use clap::{CommandFactory, Parser, Subcommand, builder::PossibleValuesParser};
 use clap_complete::{Generator, Shell, generate};
 use std::error::Error;

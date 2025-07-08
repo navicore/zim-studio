@@ -1,3 +1,10 @@
+//! Audio playback engine with real-time sample monitoring.
+//!
+//! This module provides the core audio functionality for the player, handling
+//! file loading, playback control, and real-time audio sample streaming for
+//! visualization. It supports multiple audio formats (WAV, FLAC) and provides
+//! progress tracking and seeking capabilities.
+
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use std::error::Error;
 use std::fs::File;

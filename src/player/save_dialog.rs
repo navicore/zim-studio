@@ -1,3 +1,10 @@
+//! Save dialog for exporting audio files and selections.
+//!
+//! This module provides a file browser dialog for saving audio files, with support
+//! for navigating directories and editing filenames. It tracks whether the user is
+//! saving a selection or the full file, and automatically generates appropriate
+//! filenames for edits (e.g., "original_edit.wav", "original_edit_2.wav").
+
 use std::fs;
 use std::path::PathBuf;
 

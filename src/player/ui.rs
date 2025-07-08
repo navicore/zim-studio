@@ -1,3 +1,10 @@
+//! Terminal user interface rendering for the audio player.
+//!
+//! This module handles all visual rendering for the player, including the oscilloscope
+//! waveform display, LED-style level meters, progress bars with mark indicators,
+//! and control hints. It adapts the display based on terminal size, showing more
+//! detailed visualizations when space permits.
+
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},

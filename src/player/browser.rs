@@ -1,3 +1,11 @@
+//! Telescope-style file browser for audio file discovery.
+//!
+//! This module implements a searchable file browser that uses markdown sidecar files
+//! for metadata-based searching. It allows users to quickly find audio files by
+//! searching through associated metadata (tags, descriptions, notes) while displaying
+//! the actual audio files for selection. The search uses substring matching to find
+//! relevant content within the sidecar files.
+
 use log::{debug, info, warn};
 use ratatui::{
     Frame,

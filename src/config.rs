@@ -1,3 +1,11 @@
+//! Application configuration management.
+//!
+//! This module handles the persistent configuration for zim-studio, including
+//! the root directory for projects, default folders to create, artist information,
+//! and various preferences. Configuration is stored in the user's config directory
+//! (typically ~/.config/zim/config.toml) and supports customization of project
+//! structure and behavior.
+
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
