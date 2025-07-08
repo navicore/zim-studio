@@ -1,3 +1,11 @@
+//! Terminal-based audio player with waveform visualization.
+//!
+//! The player module provides a complete audio playback experience in the terminal,
+//! featuring real-time oscilloscope visualization, stereo LED meters, file browsing
+//! with metadata search, mark/loop functionality, and audio export capabilities.
+//! It's designed for fast sample browsing and editing workflows, allowing users to
+//! quickly audition, select, and export portions of audio files.
+
 pub mod app;
 pub mod audio;
 pub mod browser;

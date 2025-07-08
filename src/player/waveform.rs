@@ -1,3 +1,10 @@
+//! Circular buffer for real-time waveform visualization.
+//!
+//! This module provides efficient storage for audio samples used in the oscilloscope
+//! display. It maintains a fixed-size circular buffer that automatically discards
+//! old samples as new ones arrive, providing a sliding window view of the audio
+//! waveform suitable for real-time visualization.
+
 use std::collections::VecDeque;
 
 pub struct WaveformBuffer {

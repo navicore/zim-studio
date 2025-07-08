@@ -1,3 +1,10 @@
+//! Main application state and control flow for the audio player.
+//!
+//! This module serves as the central coordinator for the terminal-based audio player,
+//! managing the interaction between the audio engine, user interface, file browser,
+//! and save functionality. It handles the main event loop, keyboard input processing,
+//! and state transitions between different modes (playback, browsing, saving).
+
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
