@@ -89,7 +89,7 @@ pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
 
     // Create project structure
     pb.set_message("Creating project structure...");
-    project::create_project_structure(&project_path, &config.default_folders)?;
+    project::create_project_structure(&project_path, &config.default_folders, &config)?;
     thread::sleep(Duration::from_millis(100));
     pb.inc(1);
 

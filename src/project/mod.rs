@@ -1,3 +1,4 @@
+use crate::config::Config;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -5,6 +6,7 @@ use std::path::Path;
 pub fn create_project_structure(
     project_path: &Path,
     folders: &[String],
+    config: &Config,
 ) -> Result<(), Box<dyn Error>> {
     // Create main project directory
     fs::create_dir_all(project_path)?;
@@ -26,8 +28,9 @@ pub fn create_project_structure(
 
     // Create project-specific subdirectories
     let project_folder = project_path.join("project");
-    fs::create_dir_all(project_folder.join("ableton"))?;
-    fs::create_dir_all(project_folder.join("reaper"))?;
+    for daw in &config.daw_folders {
+        fs::create_dir_all(project_folder.join(daw))?;
+    }
 
     Ok(())
 }

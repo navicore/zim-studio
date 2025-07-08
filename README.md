@@ -82,8 +82,10 @@ my_greatest_hits/
 ├── edits/              # Edited/comped audio
 ├── bounced/            # Bounced/rendered audio (stems, etc)
 └── project/            # DAW project files
-    ├── ableton/
-    └── reaper/
+    ├── live/           # Ableton Live
+    ├── reaper/         # Reaper
+    ├── bitwig/         # Bitwig Studio
+    └── renoise/        # Renoise
 ```
 
 ## Sidecar Files
