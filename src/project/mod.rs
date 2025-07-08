@@ -1,3 +1,4 @@
+use crate::config::Config;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -5,6 +6,7 @@ use std::path::Path;
 pub fn create_project_structure(
     project_path: &Path,
     folders: &[String],
+    config: &Config,
 ) -> Result<(), Box<dyn Error>> {
     // Create main project directory
     fs::create_dir_all(project_path)?;
@@ -26,8 +28,9 @@ pub fn create_project_structure(
 
     // Create project-specific subdirectories
     let project_folder = project_path.join("project");
-    fs::create_dir_all(project_folder.join("ableton"))?;
-    fs::create_dir_all(project_folder.join("reaper"))?;
+    for daw in &config.daw_folders {
+        fs::create_dir_all(project_folder.join(daw))?;
+    }
 
     Ok(())
 }
@@ -36,7 +39,7 @@ fn folder_description(folder: &str) -> &'static str {
     match folder {
         "sources" => "raw recordings (e.g., from iPad or field mic)",
         "edits" => "chopped/trimmed versions of raw files",
-        "processed" => "EQ'd, compressed, FX-enhanced versions",
+        "bounced" => "Rendered/bounced tracks (stems, FX prints)",
         "mixes" => "combined track renders (pre-master)",
         "masters" => "finalized, polished versions",
         "project" => "DAW-specific session files",

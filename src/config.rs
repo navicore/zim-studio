@@ -16,17 +16,33 @@ pub struct Config {
     pub include_readmes: bool,
     #[serde(default = "default_normalize_project_names")]
     pub normalize_project_names: bool,
+    #[serde(default = "default_daw_folders")]
+    pub daw_folders: Vec<String>,
 }
 
 fn default_artist() -> String {
-    "".to_string()
+    // Try to get username and capitalize first letter
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME")) // Windows fallback
+        .ok()
+        .and_then(|name| {
+            if name.is_empty() {
+                None
+            } else {
+                let mut chars = name.chars();
+                chars.next().map(|first| {
+                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                })
+            }
+        })
+        .unwrap_or_default()
 }
 
 fn default_folders() -> Vec<String> {
     vec![
         "sources".to_string(),
         "edits".to_string(),
-        "processed".to_string(),
+        "bounced".to_string(),
         "mixes".to_string(),
         "masters".to_string(),
         "project".to_string(),
@@ -70,6 +86,15 @@ fn default_normalize_project_names() -> bool {
     true
 }
 
+fn default_daw_folders() -> Vec<String> {
+    vec![
+        "live".to_string(),
+        "reaper".to_string(),
+        "bitwig".to_string(),
+        "renoise".to_string(),
+    ]
+}
+
 impl Config {
     pub fn new(root_dir: String) -> Self {
         Self {
@@ -79,6 +104,7 @@ impl Config {
             default_gitignore: default_gitignore(),
             include_readmes: default_include_readmes(),
             normalize_project_names: default_normalize_project_names(),
+            daw_folders: default_daw_folders(),
         }
     }
 

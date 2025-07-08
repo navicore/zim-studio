@@ -80,10 +80,12 @@ my_greatest_hits/
 ├── mixes/              # Mix versions
 ├── sources/            # Raw recordings, samples
 ├── edits/              # Edited/comped audio
-├── processed/          # Processed audio (stems, etc)
+├── bounced/            # Bounced/rendered audio (stems, etc)
 └── project/            # DAW project files
-    ├── ableton/
-    └── reaper/
+    ├── live/           # Ableton Live
+    ├── reaper/         # Reaper
+    ├── bitwig/         # Bitwig Studio
+    └── renoise/        # Renoise
 ```
 
 ## Sidecar Files
