@@ -69,6 +69,89 @@ pub fn amplitude_to_blocks(amplitude: f32) -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_waveform_buffer_new() {
+        let buffer = WaveformBuffer::new(100);
+        assert_eq!(buffer.samples.len(), 0);
+        assert_eq!(buffer.max_samples, 100);
+    }
+
+    #[test]
+    fn test_push_samples() {
+        let mut buffer = WaveformBuffer::new(5);
+        buffer.push_samples(&[1.0, 2.0, 3.0]);
+        assert_eq!(buffer.samples.len(), 3);
+
+        buffer.push_samples(&[4.0, 5.0, 6.0]);
+        assert_eq!(buffer.samples.len(), 5);
+
+        // Should maintain max size
+        let samples: Vec<f32> = buffer.samples.iter().copied().collect();
+        assert_eq!(samples, vec![2.0, 3.0, 4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn test_get_display_samples_empty() {
+        let buffer = WaveformBuffer::new(100);
+        let samples = buffer.get_display_samples(10);
+        assert_eq!(samples.len(), 10);
+        assert!(samples.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn test_get_display_samples_downsampling() {
+        let mut buffer = WaveformBuffer::new(10);
+        buffer.push_samples(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+
+        let samples = buffer.get_display_samples(5);
+        assert_eq!(samples.len(), 5);
+        // Should pick evenly spaced samples
+        assert_eq!(samples[0], 1.0);
+        assert_eq!(samples[2], 5.0);
+        assert_eq!(samples[4], 9.0);
+    }
+
+    #[test]
+    fn test_get_display_samples_upsampling() {
+        let mut buffer = WaveformBuffer::new(5);
+        buffer.push_samples(&[1.0, 2.0, 3.0]);
+
+        let samples = buffer.get_display_samples(6);
+        assert_eq!(samples.len(), 6);
+        // Should repeat some samples when upsampling
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut buffer = WaveformBuffer::new(10);
+        buffer.push_samples(&[1.0, 2.0, 3.0]);
+        assert_eq!(buffer.samples.len(), 3);
+
+        buffer.clear();
+        assert_eq!(buffer.samples.len(), 0);
+    }
+
+    #[test]
+    fn test_amplitude_to_blocks() {
+        assert_eq!(amplitude_to_blocks(0.0), " ");
+        assert_eq!(amplitude_to_blocks(0.12), " "); // 0.12 * 8 = 0.96 -> 0
+        assert_eq!(amplitude_to_blocks(0.13), "▁"); // 0.13 * 8 = 1.04 -> 1
+        assert_eq!(amplitude_to_blocks(0.25), "▂"); // 0.25 * 8 = 2.0 -> 2
+        assert_eq!(amplitude_to_blocks(0.38), "▃"); // 0.38 * 8 = 3.04 -> 3
+        assert_eq!(amplitude_to_blocks(0.5), "▄"); // 0.5 * 8 = 4.0 -> 4
+        assert_eq!(amplitude_to_blocks(0.63), "▅"); // 0.63 * 8 = 5.04 -> 5
+        assert_eq!(amplitude_to_blocks(0.75), "▆"); // 0.75 * 8 = 6.0 -> 6
+        assert_eq!(amplitude_to_blocks(0.88), "▇"); // 0.88 * 8 = 7.04 -> 7
+        assert_eq!(amplitude_to_blocks(1.0), "█"); // 1.0 * 8 = 8.0 -> 8
+        assert_eq!(amplitude_to_blocks(1.5), "█"); // Should clamp to 1.0
+        assert_eq!(amplitude_to_blocks(-0.9), "▇"); // Should use absolute value
+    }
+}
+
 /// Generate oscilloscope-style waveform line
 #[allow(dead_code)]
 pub fn generate_waveform_line(samples: &[f32], width: usize, height: usize) -> Vec<String> {
