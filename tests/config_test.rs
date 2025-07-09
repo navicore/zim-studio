@@ -14,7 +14,7 @@ fn test_config_lifecycle() {
     assert!(!zim_studio::config::Config::exists().unwrap());
 
     // Create and save a config
-    let config = zim_studio::config::Config::new(Some("/test/music".to_string()));
+    let config = zim_studio::config::Config::new();
     config.save().unwrap();
 
     // Verify it exists now
@@ -22,20 +22,17 @@ fn test_config_lifecycle() {
 
     // Load and verify values
     let loaded = zim_studio::config::Config::load().unwrap();
-    assert_eq!(loaded.root_dir, Some("/test/music".to_string()));
     assert_eq!(loaded.default_folders.len(), 6);
     assert!(loaded.default_folders.contains(&"sources".to_string()));
     assert!(loaded.default_folders.contains(&"masters".to_string()));
 
     // Test config mutation
     let mut config = zim_studio::config::Config::load().unwrap();
-    config.set_value("root_dir", "/new/path").unwrap();
     config.set_value("default_artist", "test_artist").unwrap();
     config.save().unwrap();
 
     // Verify mutations persisted
     let reloaded = zim_studio::config::Config::load().unwrap();
-    assert_eq!(reloaded.root_dir, Some("/new/path".to_string()));
     assert_eq!(reloaded.default_artist, "test_artist");
 
     // Test invalid key

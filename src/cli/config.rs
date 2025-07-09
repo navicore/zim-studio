@@ -6,10 +6,6 @@ pub fn handle_config_view() -> Result<(), Box<dyn Error>> {
     let config = Config::load()?;
 
     println!("Current ZIM configuration:");
-    match &config.root_dir {
-        Some(dir) => println!("  root_dir: {dir}"),
-        None => println!("  root_dir: <not set>"),
-    }
     println!("  default_artist: {}", config.default_artist);
     println!("  default_folders: {:?}", config.default_folders);
     println!("  include_readmes: {}", config.include_readmes);

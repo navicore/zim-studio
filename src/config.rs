@@ -13,8 +13,6 @@ use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub root_dir: Option<String>,
     #[serde(default = "default_artist")]
     pub default_artist: String,
     #[serde(default = "default_folders")]
@@ -106,14 +104,13 @@ fn default_daw_folders() -> Vec<String> {
 
 impl Default for Config {
     fn default() -> Self {
-        Self::new(None)
+        Self::new()
     }
 }
 
 impl Config {
-    pub fn new(root_dir: Option<String>) -> Self {
+    pub fn new() -> Self {
         Self {
-            root_dir,
             default_artist: default_artist(),
             default_folders: default_folders(),
             default_gitignore: default_gitignore(),
@@ -152,19 +149,6 @@ impl Config {
         Ok(config)
     }
 
-    #[allow(dead_code)]
-    pub fn load_or_create() -> Result<Self, Box<dyn Error>> {
-        match Self::load() {
-            Ok(config) => Ok(config),
-            Err(_) => {
-                let config: Config = Default::default();
-                // Try to save it, but don't fail if we can't
-                let _ = config.save();
-                Ok(config)
-            }
-        }
-    }
-
     pub fn save(&self) -> Result<(), Box<dyn Error>> {
         let config_dir = Self::config_dir()?;
 
@@ -185,7 +169,6 @@ impl Config {
 
     pub fn set_value(&mut self, key: &str, value: &str) -> Result<(), Box<dyn Error>> {
         match key {
-            "root_dir" => self.root_dir = Some(value.to_string()),
             "default_artist" => self.default_artist = value.to_string(),
             "normalize_project_names" => {
                 self.normalize_project_names = value
@@ -251,8 +234,7 @@ mod tests {
 
     #[test]
     fn test_config_new() {
-        let config = Config::new(Some("/test/root".to_string()));
-        assert_eq!(config.root_dir, Some("/test/root".to_string()));
+        let config = Config::new();
         assert_eq!(config.default_folders, default_folders());
         assert_eq!(config.default_gitignore, default_gitignore());
         assert_eq!(config.include_readmes, true);
@@ -262,7 +244,6 @@ mod tests {
     #[test]
     fn test_config_default() {
         let config: Config = Default::default();
-        assert_eq!(config.root_dir, None);
         assert_eq!(config.default_folders, default_folders());
         assert_eq!(config.default_gitignore, default_gitignore());
         assert_eq!(config.include_readmes, true);
@@ -271,11 +252,7 @@ mod tests {
 
     #[test]
     fn test_set_value() {
-        let mut config = Config::new(Some("/test".to_string()));
-
-        // Test root_dir
-        config.set_value("root_dir", "/new/root").unwrap();
-        assert_eq!(config.root_dir, Some("/new/root".to_string()));
+        let mut config = Config::new();
 
         // Test default_artist
         config.set_value("default_artist", "TestArtist").unwrap();
@@ -310,7 +287,7 @@ mod tests {
         }
 
         // Create a unique test config
-        let mut config = Config::new(Some("/test/root".to_string()));
+        let mut config = Config::new();
         config.default_artist = "TestArtist".to_string();
         config.save().unwrap();
 
@@ -323,7 +300,6 @@ mod tests {
         assert!(config_path.starts_with(&expected_dir));
 
         let loaded = Config::load().unwrap();
-        assert_eq!(loaded.root_dir, Some("/test/root".to_string()));
         assert_eq!(loaded.default_artist, "TestArtist");
         assert_eq!(loaded.default_folders, default_folders());
 
@@ -352,7 +328,7 @@ mod tests {
         assert!(!expected_path.exists());
         assert!(!Config::exists().unwrap());
 
-        let config = Config::new(Some("/test".to_string()));
+        let config = Config::new();
         config.save().unwrap();
 
         assert!(expected_path.exists());

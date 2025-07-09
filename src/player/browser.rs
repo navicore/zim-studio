@@ -7,20 +7,11 @@
 //! relevant content within the sidecar files.
 
 use log::{debug, info, warn};
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
-};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &["wav", "flac"];
 const DEFAULT_CONTEXT_SIZE: usize = 80;
-#[allow(dead_code)]
-const DEFAULT_PREVIEW_LENGTH: usize = 200;
 
 #[derive(Clone)]
 pub struct AudioFile {
@@ -41,7 +32,6 @@ pub struct Browser {
     pub filtered_items: Vec<(AudioFile, Option<String>)>, // (file, matched_context)
     pub selected: usize,
     pub search_query: String,
-    pub is_active: bool,
 }
 
 impl Browser {
@@ -51,7 +41,6 @@ impl Browser {
             filtered_items: Vec::new(),
             selected: 0,
             search_query: String::new(),
-            is_active: false,
         }
     }
 
@@ -149,14 +138,6 @@ impl Browser {
         Ok(audio_file)
     }
 
-    pub fn toggle(&mut self) {
-        self.is_active = !self.is_active;
-        if self.is_active {
-            self.search_query.clear();
-            self.filter_items();
-        }
-    }
-
     pub fn push_char(&mut self, c: char) {
         self.search_query.push(c);
         self.filter_items();
@@ -164,12 +145,6 @@ impl Browser {
 
     pub fn pop_char(&mut self) {
         self.search_query.pop();
-        self.filter_items();
-    }
-
-    #[allow(dead_code)]
-    pub fn clear_search(&mut self) {
-        self.search_query.clear();
         self.filter_items();
     }
 
@@ -347,178 +322,6 @@ fn parse_sidecar_content(content: &str) -> FileMetadata {
     metadata
 }
 
-#[allow(dead_code)]
-pub fn draw_browser(f: &mut Frame, area: Rect, browser: &Browser) {
-    // Create a floating window effect
-    let popup_area = centered_rect(90, 85, area);
-
-    // Clear the background
-    f.render_widget(Clear, popup_area);
-
-    // Main layout - split horizontally for list and preview
-    let main_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50), // File list
-            Constraint::Percentage(50), // Preview
-        ])
-        .split(popup_area);
-
-    // Left side - search and results
-    let left_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // Search input
-            Constraint::Min(5),    // Results list
-            Constraint::Length(2), // Help
-        ])
-        .split(main_chunks[0]);
-
-    // Draw components
-    draw_search_input(f, left_chunks[0], browser);
-    draw_results_list(f, left_chunks[1], browser);
-    draw_help_bar(f, left_chunks[2]);
-    draw_preview(f, main_chunks[1], browser);
-}
-
-#[allow(dead_code)]
-fn draw_search_input(f: &mut Frame, area: Rect, browser: &Browser) {
-    let search_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(" Search (ESC to close) ");
-
-    let search_text = Paragraph::new(format!("> {}", browser.search_query))
-        .style(Style::default().fg(Color::Yellow))
-        .block(search_block);
-
-    f.render_widget(search_text, area);
-}
-
-#[allow(dead_code)]
-fn draw_results_list(f: &mut Frame, area: Rect, browser: &Browser) {
-    let items: Vec<ListItem> = browser
-        .filtered_items
-        .iter()
-        .enumerate()
-        .map(|(idx, (item, _))| create_list_item(idx, item, browser.selected))
-        .collect();
-
-    let results_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" Results ({}) ", browser.filtered_items.len()));
-
-    let results_list = List::new(items).block(results_block);
-
-    f.render_widget(results_list, area);
-}
-
-#[allow(dead_code)]
-fn create_list_item(idx: usize, item: &AudioFile, selected_idx: usize) -> ListItem<'static> {
-    let is_selected = idx == selected_idx;
-
-    // Always show the audio filename
-    let filename = item
-        .audio_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Unknown");
-
-    let tags = if !item.metadata.tags.is_empty() {
-        format!(" [{}]", item.metadata.tags.join(", "))
-    } else {
-        String::new()
-    };
-
-    let content = format!("{filename}{tags}");
-
-    let style = if is_selected {
-        Style::default()
-            .fg(Color::Black)
-            .bg(Color::Cyan)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::White)
-    };
-
-    ListItem::new(content).style(style)
-}
-
-#[allow(dead_code)]
-fn draw_help_bar(f: &mut Frame, area: Rect) {
-    let help_text = Line::from(vec![
-        Span::styled("Enter", Style::default().fg(Color::Yellow)),
-        Span::raw(" play  "),
-        Span::styled("↑↓", Style::default().fg(Color::Yellow)),
-        Span::raw(" navigate"),
-    ]);
-
-    let help_widget = Paragraph::new(help_text)
-        .alignment(ratatui::layout::Alignment::Center)
-        .block(Block::default().borders(Borders::TOP));
-
-    f.render_widget(help_widget, area);
-}
-
-#[allow(dead_code)]
-fn draw_preview(f: &mut Frame, area: Rect, browser: &Browser) {
-    let preview_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(" Preview ");
-
-    if let Some((item, context)) = browser.filtered_items.get(browser.selected) {
-        let preview_text = if let Some(ctx) = context {
-            // Show the matched context
-            ctx.clone()
-        } else if !item.metadata.content.is_empty() {
-            // Show beginning of file if no specific match
-            if item.metadata.content.len() > DEFAULT_PREVIEW_LENGTH {
-                format!("{}...", &item.metadata.content[..DEFAULT_PREVIEW_LENGTH])
-            } else {
-                item.metadata.content.clone()
-            }
-        } else {
-            "No metadata available".to_string()
-        };
-
-        let preview_widget = Paragraph::new(preview_text)
-            .block(preview_block)
-            .wrap(Wrap { trim: false })
-            .style(Style::default().fg(Color::White));
-
-        f.render_widget(preview_widget, area);
-    } else {
-        let preview_widget = Paragraph::new("No file selected")
-            .block(preview_block)
-            .style(Style::default().fg(Color::DarkGray));
-
-        f.render_widget(preview_widget, area);
-    }
-}
-
-#[allow(dead_code)]
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,7 +351,6 @@ mod tests {
         assert!(browser.filtered_items.is_empty());
         assert_eq!(browser.selected, 0);
         assert!(browser.search_query.is_empty());
-        assert!(!browser.is_active);
     }
 
     #[test]
@@ -560,18 +362,6 @@ mod tests {
         assert!(!is_supported_audio_file(Path::new("test.mp3")));
         assert!(!is_supported_audio_file(Path::new("test.txt")));
         assert!(!is_supported_audio_file(Path::new("test")));
-    }
-
-    #[test]
-    fn test_toggle_browser() {
-        let mut browser = create_test_browser();
-        assert!(!browser.is_active);
-
-        browser.toggle();
-        assert!(browser.is_active);
-
-        browser.toggle();
-        assert!(!browser.is_active);
     }
 
     #[test]
@@ -587,9 +377,6 @@ mod tests {
 
         browser.pop_char();
         assert_eq!(browser.search_query, "tes");
-
-        browser.clear_search();
-        assert!(browser.search_query.is_empty());
     }
 
     #[test]
