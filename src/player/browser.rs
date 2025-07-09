@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &["wav", "flac"];
 const DEFAULT_CONTEXT_SIZE: usize = 80;
+#[allow(dead_code)]
 const DEFAULT_PREVIEW_LENGTH: usize = 200;
 
 #[derive(Clone)]
@@ -346,6 +347,7 @@ fn parse_sidecar_content(content: &str) -> FileMetadata {
     metadata
 }
 
+#[allow(dead_code)]
 pub fn draw_browser(f: &mut Frame, area: Rect, browser: &Browser) {
     // Create a floating window effect
     let popup_area = centered_rect(90, 85, area);
@@ -379,6 +381,7 @@ pub fn draw_browser(f: &mut Frame, area: Rect, browser: &Browser) {
     draw_preview(f, main_chunks[1], browser);
 }
 
+#[allow(dead_code)]
 fn draw_search_input(f: &mut Frame, area: Rect, browser: &Browser) {
     let search_block = Block::default()
         .borders(Borders::ALL)
@@ -392,6 +395,7 @@ fn draw_search_input(f: &mut Frame, area: Rect, browser: &Browser) {
     f.render_widget(search_text, area);
 }
 
+#[allow(dead_code)]
 fn draw_results_list(f: &mut Frame, area: Rect, browser: &Browser) {
     let items: Vec<ListItem> = browser
         .filtered_items
@@ -410,6 +414,7 @@ fn draw_results_list(f: &mut Frame, area: Rect, browser: &Browser) {
     f.render_widget(results_list, area);
 }
 
+#[allow(dead_code)]
 fn create_list_item(idx: usize, item: &AudioFile, selected_idx: usize) -> ListItem<'static> {
     let is_selected = idx == selected_idx;
 
@@ -440,6 +445,7 @@ fn create_list_item(idx: usize, item: &AudioFile, selected_idx: usize) -> ListIt
     ListItem::new(content).style(style)
 }
 
+#[allow(dead_code)]
 fn draw_help_bar(f: &mut Frame, area: Rect) {
     let help_text = Line::from(vec![
         Span::styled("Enter", Style::default().fg(Color::Yellow)),
@@ -455,6 +461,7 @@ fn draw_help_bar(f: &mut Frame, area: Rect) {
     f.render_widget(help_widget, area);
 }
 
+#[allow(dead_code)]
 fn draw_preview(f: &mut Frame, area: Rect, browser: &Browser) {
     let preview_block = Block::default()
         .borders(Borders::ALL)
@@ -491,6 +498,7 @@ fn draw_preview(f: &mut Frame, area: Rect, browser: &Browser) {
     }
 }
 
+#[allow(dead_code)]
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)

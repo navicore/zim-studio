@@ -21,6 +21,12 @@ use super::ui;
 use super::waveform::WaveformBuffer;
 use std::sync::mpsc;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ViewMode {
+    Player,
+    Browser,
+}
+
 pub struct App {
     pub should_quit: bool,
     pub current_file: Option<String>,
@@ -39,6 +45,7 @@ pub struct App {
     edit_counter: u32,         // Track number of edits this session
     pub save_dialog: Option<SaveDialog>,
     pub is_looping: bool, // Whether we're looping the selection
+    pub view_mode: ViewMode,
 }
 
 impl App {
@@ -61,6 +68,7 @@ impl App {
             edit_counter: 0,
             save_dialog: None,
             is_looping: false,
+            view_mode: ViewMode::Player,
         }
     }
 
@@ -629,10 +637,11 @@ fn run_app<B: ratatui::backend::Backend>(
 fn handle_key_event(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn Error>> {
     if app.save_dialog.is_some() {
         handle_save_dialog_keys(app, key)
-    } else if app.browser.is_active {
-        handle_browser_keys(app, key)
     } else {
-        handle_player_keys(app, key)
+        match app.view_mode {
+            ViewMode::Player => handle_player_keys(app, key),
+            ViewMode::Browser => handle_integrated_browser_keys(app, key),
+        }
     }
 }
 
@@ -695,6 +704,7 @@ fn execute_save(app: &mut App) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn handle_browser_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn Error>> {
     match key.code {
         KeyCode::Esc => app.browser.toggle(),
@@ -710,6 +720,7 @@ fn handle_browser_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dy
     Ok(())
 }
 
+#[allow(dead_code)]
 fn load_selected_file(app: &mut App) -> Result<(), Box<dyn Error>> {
     // Copy the path to avoid borrow issues
     let selected_path = app
@@ -727,11 +738,99 @@ fn load_selected_file(app: &mut App) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn handle_integrated_browser_keys(
+    app: &mut App,
+    key: event::KeyEvent,
+) -> Result<(), Box<dyn Error>> {
+    // Regular browser navigation
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('b') => {
+            app.view_mode = ViewMode::Player;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.browser.select_previous();
+            // Auto-load the selected file for preview
+            preview_selected_file(app)?;
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.browser.select_next();
+            // Auto-load the selected file for preview
+            preview_selected_file(app)?;
+        }
+        KeyCode::Enter => {
+            // Load file and return to player
+            if let Some(path) = app.browser.get_selected_path() {
+                let path_str = path.to_string_lossy().to_string();
+                app.load_file(&path_str)?;
+                app.view_mode = ViewMode::Player;
+            }
+        }
+        KeyCode::Char(' ') => {
+            // Toggle play/pause in browser mode
+            if app.current_file.is_some() {
+                app.toggle_playback();
+            }
+        }
+        KeyCode::Left => {
+            // Seek backward in browser mode
+            if app.current_file.is_some() {
+                seek_audio(app, -5.0);
+            }
+        }
+        KeyCode::Right => {
+            // Seek forward in browser mode
+            if app.current_file.is_some() {
+                seek_audio(app, 5.0);
+            }
+        }
+        KeyCode::Backspace => app.browser.pop_char(),
+        KeyCode::Char(c) => {
+            app.browser.push_char(c);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn preview_selected_file(app: &mut App) -> Result<(), Box<dyn Error>> {
+    // Clone the path to avoid borrow issues
+    let selected_path = app
+        .browser
+        .get_selected_path()
+        .map(|p| p.to_string_lossy().to_string());
+
+    if let Some(path_str) = selected_path {
+        // Only load if it's an audio file and different from current
+        if (path_str.ends_with(".wav") || path_str.ends_with(".flac"))
+            && app.current_file.as_ref() != Some(&path_str)
+        {
+            app.load_file(&path_str)?;
+            // Don't auto-play, let user control with space
+            app.is_playing = false;
+            if let Some(engine) = &app.audio_engine {
+                engine.pause();
+            }
+        }
+    }
+    Ok(())
+}
+
 fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn Error>> {
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char(' ') => app.toggle_playback(),
-        KeyCode::Char('/') => app.browser.toggle(),
+        KeyCode::Char('b') => {
+            app.view_mode = ViewMode::Browser;
+            app.browser.is_active = false; // Ensure old overlay is not active
+            // Initialize browser with current directory
+            app.browser.scan_directory(std::path::Path::new("."))?;
+        }
+        KeyCode::Char('/') => {
+            app.view_mode = ViewMode::Browser;
+            app.browser.is_active = false; // Ensure old overlay is not active
+            // Initialize browser with current directory
+            app.browser.scan_directory(std::path::Path::new("."))?;
+        }
         KeyCode::Left => seek_audio(app, -5.0),
         KeyCode::Right => seek_audio(app, 5.0),
         KeyCode::Char('[') | KeyCode::Char('i') => app.set_mark_in(),
@@ -786,6 +885,7 @@ mod tests {
         assert!(app.mark_out.is_none());
         assert!(app.save_dialog.is_none());
         assert!(!app.is_looping);
+        assert_eq!(app.view_mode, ViewMode::Player);
     }
 
     #[test]
