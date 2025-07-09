@@ -6,7 +6,10 @@ pub fn handle_config_view() -> Result<(), Box<dyn Error>> {
     let config = Config::load()?;
 
     println!("Current ZIM configuration:");
-    println!("  root_dir: {}", config.root_dir);
+    match &config.root_dir {
+        Some(dir) => println!("  root_dir: {dir}"),
+        None => println!("  root_dir: <not set>"),
+    }
     println!("  default_artist: {}", config.default_artist);
     println!("  default_folders: {:?}", config.default_folders);
     println!("  include_readmes: {}", config.include_readmes);
@@ -30,9 +33,10 @@ pub fn handle_config_set(key: &str, value: &str) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn handle_config_edit() -> Result<(), Box<dyn Error>> {
-    // Ensure config exists
+    // Create config if it doesn't exist
     if !Config::exists()? {
-        return Err("ZIM not initialized. Run 'zim init <root-dir>' first.".into());
+        let config: Config = Default::default();
+        config.save()?;
     }
 
     let config_path = Config::config_path()?;

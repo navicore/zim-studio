@@ -40,11 +40,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize ZIM with a root directory for all music projects
-    Init {
-        /// Root directory for all music projects
-        root_dir: String,
-    },
+    /// Initialize ZIM configuration
+    Init,
     /// Show current configuration
     Config {
         #[command(subcommand)]
@@ -60,6 +57,9 @@ enum Commands {
     New {
         /// Project name (optional, auto-generates if not provided)
         name: Option<String>,
+        /// Parent directory for the project (defaults to current directory)
+        #[arg(short, long)]
+        path: Option<String>,
     },
     /// Update sidecar metadata files for media assets
     Update {
@@ -112,8 +112,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init { root_dir } => {
-            cli::init::handle_init(&root_dir)?;
+        Commands::Init => {
+            cli::init::handle_init()?;
         }
         Commands::Config { action } => match action {
             ConfigAction::View => {
@@ -130,8 +130,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut cmd = Cli::command();
             print_completions(shell, &mut cmd);
         }
-        Commands::New { name } => {
-            cli::new::handle_new(name.as_deref())?;
+        Commands::New { name, path } => {
+            cli::new::handle_new(name.as_deref(), path.as_deref())?;
         }
         Commands::Update { path } => {
             cli::update::handle_update(&path)?;
