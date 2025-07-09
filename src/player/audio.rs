@@ -553,3 +553,146 @@ impl Source for FlacSource {
         Some(Duration::from_secs_f64(duration_secs))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is_ci_environment() -> bool {
+        // Check common CI environment variables
+        std::env::var("CI").is_ok()
+            || std::env::var("GITHUB_ACTIONS").is_ok()
+            || std::env::var("TRAVIS").is_ok()
+            || std::env::var("CIRCLECI").is_ok()
+    }
+
+    fn skip_if_no_audio() -> Result<(), Box<dyn Error>> {
+        if is_ci_environment() {
+            eprintln!("Skipping audio test in CI environment");
+            return Err("Audio not available in CI".into());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_new_audio_engine() {
+        if skip_if_no_audio().is_err() {
+            return;
+        }
+
+        let result = AudioEngine::new();
+        assert!(result.is_ok());
+
+        let (engine, rx) = result.unwrap();
+        assert!(engine.info.is_none());
+        assert!(engine.duration.is_none());
+        assert_eq!(engine.total_samples, 0);
+        assert!(engine.current_file_path.is_none());
+
+        // Channel should be ready to receive
+        assert!(rx.try_recv().is_err()); // Should be empty but not disconnected
+    }
+
+    #[test]
+    fn test_audio_engine_initial_state() {
+        if skip_if_no_audio().is_err() {
+            return;
+        }
+
+        let (engine, _rx) = AudioEngine::new().unwrap();
+
+        // Check initial volume and progress
+        assert_eq!(engine.volume(), 1.0);
+        assert_eq!(engine.get_progress(), 0.0);
+    }
+
+    #[test]
+    fn test_load_nonexistent_file() {
+        if skip_if_no_audio().is_err() {
+            return;
+        }
+
+        let (mut engine, _rx) = AudioEngine::new().unwrap();
+        let result = engine.load_file(Path::new("/nonexistent/file.wav"));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_unsupported_format() {
+        if skip_if_no_audio().is_err() {
+            return;
+        }
+
+        let (mut engine, _rx) = AudioEngine::new().unwrap();
+        let result = engine.load_file(Path::new("test.mp3"));
+
+        assert!(result.is_err());
+        // The actual error depends on whether the file exists or not
+        // If file doesn't exist, we get a file system error
+        // So just check that it fails
+    }
+
+    #[test]
+    fn test_play_pause_commands() {
+        if skip_if_no_audio().is_err() {
+            return;
+        }
+
+        let (engine, _rx) = AudioEngine::new().unwrap();
+
+        // Test that play and pause commands don't panic
+        engine.play();
+        engine.pause();
+
+        // Can't test actual state without a loaded file
+    }
+
+    #[test]
+    fn test_volume_control() {
+        if skip_if_no_audio().is_err() {
+            return;
+        }
+
+        let (engine, _rx) = AudioEngine::new().unwrap();
+
+        // Default volume should be 1.0
+        assert_eq!(engine.volume(), 1.0);
+
+        // Set volume to 0.5
+        engine.set_volume(0.5);
+        assert_eq!(engine.volume(), 0.5);
+
+        // Set volume to 2.0
+        engine.set_volume(2.0);
+        assert_eq!(engine.volume(), 2.0);
+
+        // Note: rodio doesn't clamp negative volumes to 0, it stores them as-is
+        // So we won't test negative volumes
+    }
+
+    #[test]
+    fn test_seek_without_file() {
+        if skip_if_no_audio().is_err() {
+            return;
+        }
+
+        let (mut engine, _rx) = AudioEngine::new().unwrap();
+
+        // Seeking without a loaded file should fail gracefully
+        let result = engine.seek_relative(5.0);
+        assert!(result.is_ok()); // Actually returns Ok(()) when no info
+    }
+
+    #[test]
+    fn test_progress_without_file() {
+        if skip_if_no_audio().is_err() {
+            return;
+        }
+
+        let (engine, _rx) = AudioEngine::new().unwrap();
+
+        // Progress without file should be 0
+        assert_eq!(engine.get_progress(), 0.0);
+    }
+}
