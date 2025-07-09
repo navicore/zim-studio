@@ -16,8 +16,7 @@ use ratatui::{
     },
 };
 
-use super::app::App;
-use super::browser::draw_browser;
+use super::app::{App, ViewMode};
 use super::save_dialog_ui::draw_save_dialog;
 
 // UI Constants
@@ -56,15 +55,18 @@ fn create_control_button(key: &str, style: Style) -> Span<'static> {
 pub fn draw(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    // Draw main UI
-    draw_main_ui(f, app);
-
-    // Draw browser overlay if active
-    if app.browser.is_active {
-        draw_browser(f, size, &app.browser);
+    match app.view_mode {
+        ViewMode::Player => {
+            // Draw main UI
+            draw_main_ui(f, app);
+        }
+        ViewMode::Browser => {
+            // Draw integrated browser view
+            draw_integrated_browser(f, app);
+        }
     }
 
-    // Draw save dialog if active
+    // Draw save dialog if active (always on top)
     if let Some(ref save_dialog) = app.save_dialog {
         draw_save_dialog(f, size, save_dialog);
     }
@@ -493,6 +495,167 @@ fn draw_progress_with_marks(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(selection, selection_area);
         }
     }
+}
+
+fn draw_integrated_browser(f: &mut Frame, app: &App) {
+    let size = f.area();
+
+    // Layout: Search bar, file list with preview, mini player
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1) // Add margin around the entire layout
+        .constraints([
+            Constraint::Length(3), // Search bar
+            Constraint::Min(10),   // File browser
+            Constraint::Length(1), // Mini player - just one line
+        ])
+        .split(size);
+
+    // Draw search bar
+    draw_browser_search_bar(f, chunks[0], &app.browser);
+
+    // Draw file browser with preview
+    draw_browser_content(f, chunks[1], &app.browser);
+
+    // Draw mini player
+    draw_mini_player(f, chunks[2], app);
+}
+
+fn draw_browser_search_bar(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
+    let search_text = if browser.search_query.is_empty() {
+        "Search: Type to filter files...".to_string()
+    } else {
+        format!("Search: {}", browser.search_query)
+    };
+
+    let search = Paragraph::new(search_text)
+        .block(Block::default().borders(Borders::ALL).title("Search"))
+        .style(if browser.search_query.is_empty() {
+            Style::default().fg(Color::Gray)
+        } else {
+            Style::default().fg(Color::Yellow)
+        });
+
+    f.render_widget(search, area);
+}
+
+fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
+    // Split horizontally for file list and preview
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(40), // File list
+            Constraint::Percentage(60), // Preview
+        ])
+        .split(area);
+
+    // File list
+    let files: Vec<Line> = browser
+        .filtered_items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let style = if i == browser.selected {
+                Style::default().bg(Color::Blue).fg(Color::White)
+            } else {
+                Style::default()
+            };
+
+            let prefix = if i == browser.selected { "> " } else { "  " };
+            let filename = item
+                .0
+                .audio_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Unknown");
+            Line::from(format!("{prefix}{filename}")).style(style)
+        })
+        .collect();
+
+    let file_list = Paragraph::new(files)
+        .block(Block::default().borders(Borders::ALL).title("Files"))
+        .scroll((browser.selected.saturating_sub(10) as u16, 0));
+
+    f.render_widget(file_list, chunks[0]);
+
+    // Preview
+    let preview_content =
+        if let Some((item, context)) = browser.filtered_items.get(browser.selected) {
+            context.clone().unwrap_or_else(|| {
+                if !item.metadata.content.is_empty() {
+                    item.metadata.content.chars().take(200).collect::<String>() + "..."
+                } else {
+                    "No preview available".to_string()
+                }
+            })
+        } else {
+            "No preview available".to_string()
+        };
+
+    let preview = Paragraph::new(preview_content)
+        .block(Block::default().borders(Borders::ALL).title("Preview"))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+    f.render_widget(preview, chunks[1]);
+}
+
+fn draw_mini_player(f: &mut Frame, area: Rect, app: &App) {
+    // Create a more compact single-line layout
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(3),  // Play/pause icon
+            Constraint::Min(20),    // Progress bar with embedded percentage
+            Constraint::Length(12), // Time
+            Constraint::Length(8),  // LEDs
+        ])
+        .split(area);
+
+    // Play/pause icon
+    let play_icon = if app.is_playing { "▶" } else { "⏸" };
+    let play_widget = Paragraph::new(play_icon).style(Style::default().fg(if app.is_playing {
+        Color::Green
+    } else {
+        Color::Yellow
+    }));
+    f.render_widget(play_widget, chunks[0]);
+
+    // Progress bar with inline percentage text
+    let progress = (app.playback_position * 100.0) as u16;
+    let progress_bar = Gauge::default()
+        .percent(progress)
+        .label(format!("{progress}%"))
+        .style(Style::default().fg(Color::DarkGray))
+        .gauge_style(Style::default().fg(Color::Cyan));
+    f.render_widget(progress_bar, chunks[1]);
+
+    // Time display
+    let time_text = if let Some(duration) = app.duration {
+        let current = duration.as_secs_f32() * app.playback_position;
+        let total = duration.as_secs_f32();
+        format!("{current:.0}/{total:.0}s")
+    } else {
+        "--/--".to_string()
+    };
+    let time_widget = Paragraph::new(time_text)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::White));
+    f.render_widget(time_widget, chunks[2]);
+
+    // LED meters - more compact
+    let left_led = get_led_char(app.left_level);
+    let right_led = get_led_char(app.right_level);
+    let left_color = get_led_color(app.left_level, true);
+    let right_color = get_led_color(app.right_level, false);
+
+    let leds = Line::from(vec![
+        Span::styled(left_led, Style::default().fg(left_color)),
+        Span::raw(" "),
+        Span::styled(right_led, Style::default().fg(right_color)),
+    ]);
+
+    let led_widget = Paragraph::new(leds).alignment(Alignment::Center);
+    f.render_widget(led_widget, chunks[3]);
 }
 
 #[cfg(test)]
