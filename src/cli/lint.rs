@@ -12,10 +12,10 @@ const YAML_DELIMITER: &str = "---\n";
 const SIDECAR_EXTENSION: &str = "md";
 
 // Type for duration field that can be either a number or "unknown"
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum DurationField {
+    #[allow(dead_code)]
     Number(f64),
     Unknown(String),
 }
@@ -48,8 +48,8 @@ struct ArtReference {
     purpose: ArtPurpose,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SidecarMetadata {
     file: String,
     path: String,

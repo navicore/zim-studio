@@ -43,30 +43,6 @@ impl WaveformBuffer {
             })
             .collect()
     }
-
-    #[allow(dead_code)]
-    pub fn clear(&mut self) {
-        self.samples.clear();
-    }
-}
-
-/// Convert amplitude to terminal block characters for visualization
-#[allow(dead_code)]
-pub fn amplitude_to_blocks(amplitude: f32) -> &'static str {
-    let normalized = amplitude.abs().min(1.0);
-    let index = (normalized * 8.0) as usize;
-
-    match index {
-        0 => " ",
-        1 => "▁",
-        2 => "▂",
-        3 => "▃",
-        4 => "▄",
-        5 => "▅",
-        6 => "▆",
-        7 => "▇",
-        _ => "█",
-    }
 }
 
 #[cfg(test)]
@@ -124,76 +100,4 @@ mod tests {
         assert_eq!(samples.len(), 6);
         // Should repeat some samples when upsampling
     }
-
-    #[test]
-    fn test_clear() {
-        let mut buffer = WaveformBuffer::new(10);
-        buffer.push_samples(&[1.0, 2.0, 3.0]);
-        assert_eq!(buffer.samples.len(), 3);
-
-        buffer.clear();
-        assert_eq!(buffer.samples.len(), 0);
-    }
-
-    #[test]
-    fn test_amplitude_to_blocks() {
-        assert_eq!(amplitude_to_blocks(0.0), " ");
-        assert_eq!(amplitude_to_blocks(0.12), " "); // 0.12 * 8 = 0.96 -> 0
-        assert_eq!(amplitude_to_blocks(0.13), "▁"); // 0.13 * 8 = 1.04 -> 1
-        assert_eq!(amplitude_to_blocks(0.25), "▂"); // 0.25 * 8 = 2.0 -> 2
-        assert_eq!(amplitude_to_blocks(0.38), "▃"); // 0.38 * 8 = 3.04 -> 3
-        assert_eq!(amplitude_to_blocks(0.5), "▄"); // 0.5 * 8 = 4.0 -> 4
-        assert_eq!(amplitude_to_blocks(0.63), "▅"); // 0.63 * 8 = 5.04 -> 5
-        assert_eq!(amplitude_to_blocks(0.75), "▆"); // 0.75 * 8 = 6.0 -> 6
-        assert_eq!(amplitude_to_blocks(0.88), "▇"); // 0.88 * 8 = 7.04 -> 7
-        assert_eq!(amplitude_to_blocks(1.0), "█"); // 1.0 * 8 = 8.0 -> 8
-        assert_eq!(amplitude_to_blocks(1.5), "█"); // Should clamp to 1.0
-        assert_eq!(amplitude_to_blocks(-0.9), "▇"); // Should use absolute value
-    }
-}
-
-/// Generate oscilloscope-style waveform line
-#[allow(dead_code)]
-pub fn generate_waveform_line(samples: &[f32], width: usize, height: usize) -> Vec<String> {
-    let mut lines = vec![String::new(); height];
-
-    if samples.is_empty() || width == 0 {
-        return lines;
-    }
-
-    // Downsample to fit width
-    let step = samples.len() as f32 / width as f32;
-    let display_samples: Vec<f32> = (0..width)
-        .map(|i| {
-            let start = (i as f32 * step) as usize;
-            let end = ((i + 1) as f32 * step) as usize;
-            let end = end.min(samples.len());
-
-            // Take average of samples in this slice
-            if start < end {
-                samples[start..end].iter().sum::<f32>() / (end - start) as f32
-            } else {
-                0.0
-            }
-        })
-        .collect();
-
-    // Convert to terminal coordinates
-    for (x, &sample) in display_samples.iter().enumerate() {
-        // Map sample (-1.0 to 1.0) to terminal row (0 to height-1)
-        let y = ((1.0 - sample) * 0.5 * (height - 1) as f32) as usize;
-        let y = y.min(height - 1);
-
-        if x < lines[y].len() {
-            lines[y].replace_range(x..=x, "█");
-        } else {
-            // Pad with spaces if needed
-            while lines[y].len() < x {
-                lines[y].push(' ');
-            }
-            lines[y].push('█');
-        }
-    }
-
-    lines
 }

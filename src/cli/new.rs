@@ -48,10 +48,7 @@ pub fn handle_new(name: Option<&str>, path: Option<&str>) -> Result<(), Box<dyn 
     // Create project path
     let parent_dir = match path {
         Some(p) => shellexpand::tilde(p).to_string(),
-        None => match &config.root_dir {
-            Some(root) => shellexpand::tilde(root).to_string(),
-            None => std::env::current_dir()?.to_string_lossy().to_string(),
-        },
+        None => std::env::current_dir()?.to_string_lossy().to_string(),
     };
     let project_path = Path::new(&parent_dir).join(&project_name);
 
@@ -141,15 +138,11 @@ pub fn handle_new(name: Option<&str>, path: Option<&str>) -> Result<(), Box<dyn 
 
 fn generate_project_name(path: Option<&str>) -> Result<String, Box<dyn Error>> {
     let date = chrono::Local::now().format("%Y%m%d");
-    let config = crate::config::Config::load()?;
 
     // Determine parent directory
     let parent_dir = match path {
         Some(p) => shellexpand::tilde(p).to_string(),
-        None => match &config.root_dir {
-            Some(root) => shellexpand::tilde(root).to_string(),
-            None => std::env::current_dir()?.to_string_lossy().to_string(),
-        },
+        None => std::env::current_dir()?.to_string_lossy().to_string(),
     };
 
     let mut counter = 1;

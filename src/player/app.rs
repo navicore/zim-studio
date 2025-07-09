@@ -553,11 +553,6 @@ impl App {
     }
 }
 
-#[allow(dead_code)]
-pub fn run() -> Result<(), Box<dyn Error>> {
-    run_with_file(None)
-}
-
 pub fn run_with_file(file_path: Option<&str>) -> Result<(), Box<dyn Error>> {
     // Initialize logging
     init_logging()?;
@@ -704,40 +699,6 @@ fn execute_save(app: &mut App) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-#[allow(dead_code)]
-fn handle_browser_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn Error>> {
-    match key.code {
-        KeyCode::Esc => app.browser.toggle(),
-        KeyCode::Up => app.browser.select_previous(),
-        KeyCode::Down => app.browser.select_next(),
-        KeyCode::Enter => {
-            load_selected_file(app)?;
-        }
-        KeyCode::Backspace => app.browser.pop_char(),
-        KeyCode::Char(c) => app.browser.push_char(c),
-        _ => {}
-    }
-    Ok(())
-}
-
-#[allow(dead_code)]
-fn load_selected_file(app: &mut App) -> Result<(), Box<dyn Error>> {
-    // Copy the path to avoid borrow issues
-    let selected_path = app
-        .browser
-        .get_selected_path()
-        .map(|p| p.to_string_lossy().to_string());
-
-    if let Some(path_str) = selected_path {
-        if let Err(e) = app.load_file(&path_str) {
-            eprintln!("Error loading file: {e}");
-            return Err(e);
-        }
-        app.browser.toggle(); // Close browser after selection
-    }
-    Ok(())
-}
-
 fn handle_integrated_browser_keys(
     app: &mut App,
     key: event::KeyEvent,
@@ -821,13 +782,11 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
         KeyCode::Char(' ') => app.toggle_playback(),
         KeyCode::Char('b') => {
             app.view_mode = ViewMode::Browser;
-            app.browser.is_active = false; // Ensure old overlay is not active
             // Initialize browser with current directory
             app.browser.scan_directory(std::path::Path::new("."))?;
         }
         KeyCode::Char('/') => {
             app.view_mode = ViewMode::Browser;
-            app.browser.is_active = false; // Ensure old overlay is not active
             // Initialize browser with current directory
             app.browser.scan_directory(std::path::Path::new("."))?;
         }

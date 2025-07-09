@@ -20,7 +20,6 @@ use std::time::Duration;
 // Type alias for the audio engine creation result
 type AudioEngineResult = Result<(AudioEngine, mpsc::Receiver<Vec<f32>>), Box<dyn Error>>;
 
-#[allow(dead_code)]
 pub struct AudioInfo {
     pub channels: u16,
     pub sample_rate: u32,
@@ -182,21 +181,6 @@ impl AudioEngine {
 
     pub fn pause(&self) {
         self.sink.pause();
-    }
-
-    #[allow(dead_code)]
-    pub fn is_paused(&self) -> bool {
-        self.sink.is_paused()
-    }
-
-    #[allow(dead_code)]
-    pub fn volume(&self) -> f32 {
-        self.sink.volume()
-    }
-
-    #[allow(dead_code)]
-    pub fn set_volume(&self, volume: f32) {
-        self.sink.set_volume(volume);
     }
 
     pub fn get_progress(&self) -> f32 {
@@ -621,8 +605,7 @@ mod tests {
 
         let (engine, _rx) = result.unwrap();
 
-        // Check initial volume and progress
-        assert_eq!(engine.volume(), 1.0);
+        // Check initial progress
         assert_eq!(engine.get_progress(), 0.0);
     }
 
@@ -684,35 +667,6 @@ mod tests {
         engine.pause();
 
         // Can't test actual state without a loaded file
-    }
-
-    #[test]
-    fn test_volume_control() {
-        if skip_if_no_audio().is_err() {
-            return;
-        }
-
-        let result = AudioEngine::new();
-        if result.is_err() {
-            eprintln!("Skipping test: AudioEngine creation failed (no audio device?)");
-            return;
-        }
-
-        let (engine, _rx) = result.unwrap();
-
-        // Default volume should be 1.0
-        assert_eq!(engine.volume(), 1.0);
-
-        // Set volume to 0.5
-        engine.set_volume(0.5);
-        assert_eq!(engine.volume(), 0.5);
-
-        // Set volume to 2.0
-        engine.set_volume(2.0);
-        assert_eq!(engine.volume(), 2.0);
-
-        // Note: rodio doesn't clamp negative volumes to 0, it stores them as-is
-        // So we won't test negative volumes
     }
 
     #[test]
