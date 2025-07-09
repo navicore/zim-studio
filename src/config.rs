@@ -176,3 +176,164 @@ impl Config {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use tempfile::TempDir;
+
+    // Use a mutex to ensure tests that modify environment variables don't run concurrently
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_default_artist() {
+        let artist = default_artist();
+        // Should either be empty or start with uppercase
+        if !artist.is_empty() {
+            assert!(artist.chars().next().unwrap().is_uppercase());
+        }
+    }
+
+    #[test]
+    fn test_default_folders() {
+        let folders = default_folders();
+        assert!(folders.contains(&"sources".to_string()));
+        assert!(folders.contains(&"edits".to_string()));
+        assert!(folders.contains(&"bounced".to_string()));
+        assert!(folders.contains(&"mixes".to_string()));
+        assert!(folders.contains(&"masters".to_string()));
+        assert!(folders.contains(&"project".to_string()));
+        assert_eq!(folders.len(), 6);
+    }
+
+    #[test]
+    fn test_default_daw_folders() {
+        let folders = default_daw_folders();
+        assert!(folders.contains(&"live".to_string()));
+        assert!(folders.contains(&"reaper".to_string()));
+        assert!(folders.contains(&"bitwig".to_string()));
+        assert!(folders.contains(&"renoise".to_string()));
+    }
+
+    #[test]
+    fn test_default_gitignore() {
+        let gitignore = default_gitignore();
+        assert!(gitignore.contains(&"*.wav".to_string()));
+        assert!(gitignore.contains(&"*.aif".to_string()));
+        assert!(gitignore.contains(&"*.flac".to_string()));
+        assert!(gitignore.contains(&"*.mp3".to_string()));
+        assert!(gitignore.contains(&"*.jpg".to_string()));
+        // Check that it has many entries
+        assert!(gitignore.len() > 15);
+    }
+
+    #[test]
+    fn test_config_new() {
+        let config = Config::new("/test/root".to_string());
+        assert_eq!(config.root_dir, "/test/root");
+        assert_eq!(config.default_folders, default_folders());
+        assert_eq!(config.default_gitignore, default_gitignore());
+        assert_eq!(config.include_readmes, true);
+        assert_eq!(config.normalize_project_names, true);
+    }
+
+    #[test]
+    fn test_set_value() {
+        let mut config = Config::new("/test".to_string());
+
+        // Test root_dir
+        config.set_value("root_dir", "/new/root").unwrap();
+        assert_eq!(config.root_dir, "/new/root");
+
+        // Test default_artist
+        config.set_value("default_artist", "TestArtist").unwrap();
+        assert_eq!(config.default_artist, "TestArtist");
+
+        // Test normalize_project_names
+        config.set_value("normalize_project_names", "true").unwrap();
+        assert_eq!(config.normalize_project_names, true);
+
+        config
+            .set_value("normalize_project_names", "false")
+            .unwrap();
+        assert_eq!(config.normalize_project_names, false);
+
+        // Test invalid boolean
+        let result = config.set_value("normalize_project_names", "invalid");
+        assert!(result.is_err());
+
+        // Test unknown key
+        let result = config.set_value("unknown_key", "value");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_save_and_load() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let original_xdg = std::env::var("XDG_CONFIG_HOME").ok();
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", temp_dir.path());
+        }
+
+        // Create a unique test config
+        let mut config = Config::new("/test/root".to_string());
+        config.default_artist = "TestArtist".to_string();
+        config.save().unwrap();
+
+        // Verify the config file was created in the temp directory
+        let config_path = Config::config_path().unwrap();
+        assert!(config_path.exists());
+
+        // The path should be under temp_dir/zim/config.toml
+        let expected_dir = temp_dir.path().join("zim");
+        assert!(config_path.starts_with(&expected_dir));
+
+        let loaded = Config::load().unwrap();
+        assert_eq!(loaded.root_dir, "/test/root");
+        assert_eq!(loaded.default_artist, "TestArtist");
+        assert_eq!(loaded.default_folders, default_folders());
+
+        // Clean up - restore original value if it existed
+        unsafe {
+            if let Some(original) = original_xdg {
+                std::env::set_var("XDG_CONFIG_HOME", original);
+            } else {
+                std::env::remove_var("XDG_CONFIG_HOME");
+            }
+        }
+    }
+
+    #[test]
+    fn test_config_exists() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let original_xdg = std::env::var("XDG_CONFIG_HOME").ok();
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", temp_dir.path());
+        }
+
+        // Verify we're checking in the temp directory
+        let expected_path = temp_dir.path().join("zim").join("config.toml");
+        assert!(!expected_path.exists());
+        assert!(!Config::exists().unwrap());
+
+        let config = Config::new("/test".to_string());
+        config.save().unwrap();
+
+        assert!(expected_path.exists());
+        assert!(Config::exists().unwrap());
+
+        // Clean up - restore original value if it existed
+        unsafe {
+            if let Some(original) = original_xdg {
+                std::env::set_var("XDG_CONFIG_HOME", original);
+            } else {
+                std::env::remove_var("XDG_CONFIG_HOME");
+            }
+        }
+    }
+}
