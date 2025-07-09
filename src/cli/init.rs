@@ -2,54 +2,21 @@ use crate::config::Config;
 use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use std::error::Error;
-use std::fs;
-use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-pub fn handle_init(root_dir: &str) -> Result<(), Box<dyn Error>> {
+pub fn handle_init() -> Result<(), Box<dyn Error>> {
     // Check if already initialized
     if Config::exists()? {
-        return Err(format!(
-            "{} ZIM is already initialized. Use {} to change the root directory.",
+        eprintln!(
+            "{} ZIM is already initialized. Use {} to edit configuration.",
             "Error:".red().bold(),
-            "'zim config set root_dir <path>'".cyan()
-        )
-        .into());
-    }
-
-    // Expand tilde if present
-    let expanded_path = shellexpand::tilde(root_dir);
-    let root_path = Path::new(expanded_path.as_ref());
-
-    // Create directory if it doesn't exist
-    if !root_path.exists() {
-        let spinner = ProgressBar::new_spinner();
-        spinner.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.cyan} {msg}")
-                .unwrap()
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+            "'zim config edit'".cyan()
         );
-        spinner.set_message(format!(
-            "Creating root directory: {}",
-            root_path.display().to_string().bright_blue()
-        ));
-
-        fs::create_dir_all(root_path)?;
-        thread::sleep(Duration::from_millis(200)); // Brief pause for visual effect
-
-        spinner.finish_with_message(format!("{} Created root directory", "✓".green().bold()));
-    } else if !root_path.is_dir() {
-        return Err(format!(
-            "{} {} exists but is not a directory",
-            "Error:".red().bold(),
-            root_path.display()
-        )
-        .into());
+        return Err("Configuration already exists".into());
     }
 
-    // Create and save config
+    // Create and save default config
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(
         ProgressStyle::default_spinner()
@@ -57,9 +24,9 @@ pub fn handle_init(root_dir: &str) -> Result<(), Box<dyn Error>> {
             .unwrap()
             .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
     );
-    spinner.set_message("Saving configuration...");
+    spinner.set_message("Creating default configuration...");
 
-    let config = Config::new(root_path.to_string_lossy().to_string());
+    let config: Config = Default::default();
     config.save()?;
 
     thread::sleep(Duration::from_millis(200));
@@ -72,13 +39,19 @@ pub fn handle_init(root_dir: &str) -> Result<(), Box<dyn Error>> {
     );
     println!(
         "  {} {}",
-        "Root directory:".bright_black(),
-        root_path.display().to_string().cyan()
-    );
-    println!(
-        "  {} {}",
         "Configuration:".bright_black(),
         Config::config_path()?.display().to_string().cyan()
+    );
+    println!();
+    println!("{}", "Default configuration created:".yellow().bold());
+    println!("  • Projects will be created relative to current directory");
+    println!(
+        "  • Use {} to set a default root directory",
+        "'zim config set root_dir <path>'".cyan()
+    );
+    println!(
+        "  • Use {} to customize other settings",
+        "'zim config edit'".cyan()
     );
     println!();
     println!("{}", "Next steps:".yellow().bold());

@@ -8,7 +8,7 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
+pub fn handle_new(name: Option<&str>, path: Option<&str>) -> Result<(), Box<dyn Error>> {
     // Load configuration
     let config = Config::load()?;
 
@@ -16,7 +16,7 @@ pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
     let project_name = match name {
         Some(n) => n.to_string(),
         None => {
-            let generated = generate_project_name()?;
+            let generated = generate_project_name(path)?;
             let use_generated = Confirm::with_theme(&ColorfulTheme::default())
                 .with_prompt(format!("Use auto-generated name '{}'?", generated.cyan()))
                 .default(true)
@@ -46,18 +46,24 @@ pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
     };
 
     // Create project path
-    let root_dir = shellexpand::tilde(&config.root_dir);
-    let project_path = Path::new(root_dir.as_ref()).join(&project_name);
+    let parent_dir = match path {
+        Some(p) => shellexpand::tilde(p).to_string(),
+        None => match &config.root_dir {
+            Some(root) => shellexpand::tilde(root).to_string(),
+            None => std::env::current_dir()?.to_string_lossy().to_string(),
+        },
+    };
+    let project_path = Path::new(&parent_dir).join(&project_name);
 
     // Check if project already exists
     if project_path.exists() {
-        return Err(format!(
+        eprintln!(
             "{} Project '{}' already exists at {}",
             "Error:".red().bold(),
             project_name.yellow(),
             project_path.display().to_string().cyan()
-        )
-        .into());
+        );
+        return Err("Project already exists".into());
     }
 
     println!(
@@ -133,15 +139,23 @@ pub fn handle_new(name: Option<&str>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn generate_project_name() -> Result<String, Box<dyn Error>> {
+fn generate_project_name(path: Option<&str>) -> Result<String, Box<dyn Error>> {
     let date = chrono::Local::now().format("%Y%m%d");
-    let binding = crate::config::Config::load()?;
-    let root_dir = shellexpand::tilde(&binding.root_dir);
+    let config = crate::config::Config::load()?;
+
+    // Determine parent directory
+    let parent_dir = match path {
+        Some(p) => shellexpand::tilde(p).to_string(),
+        None => match &config.root_dir {
+            Some(root) => shellexpand::tilde(root).to_string(),
+            None => std::env::current_dir()?.to_string_lossy().to_string(),
+        },
+    };
 
     let mut counter = 1;
     loop {
         let name = format!("{date}-{counter:03}");
-        let project_path = Path::new(root_dir.as_ref()).join(&name);
+        let project_path = Path::new(&parent_dir).join(&name);
         if !project_path.exists() {
             return Ok(name);
         }
