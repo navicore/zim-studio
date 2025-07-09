@@ -20,6 +20,39 @@ use super::app::App;
 use super::browser::draw_browser;
 use super::save_dialog_ui::draw_save_dialog;
 
+// UI Constants
+const MIN_HEIGHT_FOR_OSCILLOSCOPE: u16 = 20;
+const LED_LEVEL_THRESHOLDS: [(f32, &str); 3] = [
+    (0.3, "●"),  // Full circle
+    (0.05, "◐"), // Half filled
+    (0.0, "○"),  // Empty circle
+];
+
+// LED color definitions for different levels
+const LED_CLIPPING_LEVEL: f32 = 0.9;
+const LED_HIGH_LEVEL: f32 = 0.3;
+const LED_LOW_LEVEL: f32 = 0.05;
+
+// Grid constants for oscilloscope
+const GRID_COLOR: Color = Color::Rgb(0, 60, 30);
+const GRID_VERTICAL_STEP: usize = 10;
+const GRID_HORIZONTAL_LINES: [f64; 7] = [-0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75];
+
+// Helper functions
+fn format_time(seconds: u64) -> String {
+    let mins = seconds / 60;
+    let secs = seconds % 60;
+    format!("{mins:02}:{secs:02}")
+}
+
+fn format_duration(duration: std::time::Duration) -> String {
+    format_time(duration.as_secs())
+}
+
+fn create_control_button(key: &str, style: Style) -> Span<'static> {
+    Span::styled(format!("[{key}]"), style)
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     let size = f.area();
 
@@ -39,7 +72,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
 fn draw_main_ui(f: &mut Frame, app: &App) {
     let size = f.area();
-    let show_oscilloscope = size.height > 20; // Only show oscilloscope if window is tall enough
+    let show_oscilloscope = size.height > MIN_HEIGHT_FOR_OSCILLOSCOPE;
 
     let constraints = if show_oscilloscope {
         vec![
@@ -95,47 +128,47 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         .split(chunks[controls_idx]);
 
     // First row of controls
+    let play_color = if app.is_playing {
+        Color::Yellow
+    } else {
+        Color::Green
+    };
     let controls_row1 = vec![
-        if app.is_playing {
-            Span::styled("[space]", Style::default().fg(Color::Yellow))
-        } else {
-            Span::styled("[space]", Style::default().fg(Color::Green))
-        },
+        create_control_button("space", Style::default().fg(play_color)),
         Span::raw(if app.is_playing {
             " pause  "
         } else {
             " play  "
         }),
-        Span::styled("[←→]", Style::default().fg(Color::Magenta)),
+        create_control_button("←→", Style::default().fg(Color::Magenta)),
         Span::raw(" seek  "),
-        Span::styled("[/]", Style::default().fg(Color::Blue)),
+        create_control_button("/", Style::default().fg(Color::Blue)),
         Span::raw(" browse  "),
-        Span::styled("[q]", Style::default().fg(Color::Red)),
+        create_control_button("q", Style::default().fg(Color::Red)),
         Span::raw(" quit"),
     ];
 
     // Second row of controls
+    let loop_style = if app.is_looping {
+        Style::default().fg(Color::Magenta).bg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::Magenta)
+    };
+
     let controls_row2 = vec![
-        Span::styled("[i]", Style::default().fg(Color::Green)),
+        create_control_button("i", Style::default().fg(Color::Green)),
         Span::raw(" in  "),
-        Span::styled("[o]", Style::default().fg(Color::Green)),
+        create_control_button("o", Style::default().fg(Color::Green)),
         Span::raw(" out  "),
-        Span::styled("[x]", Style::default().fg(Color::Yellow)),
+        create_control_button("x", Style::default().fg(Color::Yellow)),
         Span::raw(" clear  "),
-        if app.is_looping {
-            Span::styled(
-                "[l]",
-                Style::default().fg(Color::Magenta).bg(Color::DarkGray),
-            )
-        } else {
-            Span::styled("[l]", Style::default().fg(Color::Magenta))
-        },
+        create_control_button("l", loop_style),
         Span::raw(if app.is_looping {
             " loop ●  "
         } else {
             " loop  "
         }),
-        Span::styled("[s]", Style::default().fg(Color::Cyan)),
+        create_control_button("s", Style::default().fg(Color::Cyan)),
         Span::raw(" save"),
     ];
 
@@ -209,38 +242,26 @@ fn draw_leds(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn get_led_char(level: f32) -> &'static str {
-    if level < 0.05 {
-        "○" // Empty circle
-    } else if level < 0.3 {
-        "◐" // Half filled
-    } else {
-        "●" // Full circle
+    for (threshold, symbol) in LED_LEVEL_THRESHOLDS.iter() {
+        if level >= *threshold {
+            return symbol;
+        }
     }
+    "○" // Default to empty circle
 }
 
 fn get_led_color(level: f32, is_left: bool) -> Color {
-    if is_left {
-        // Green for left channel
-        if level > 0.9 {
-            Color::Rgb(255, 100, 100) // Red when clipping
-        } else if level > 0.3 {
-            Color::Rgb(100, 255, 100) // Bright green
-        } else if level > 0.05 {
-            Color::Rgb(50, 200, 50) // Medium green
-        } else {
-            Color::Rgb(20, 100, 20) // Dim green
-        }
-    } else {
-        // Red/orange for right channel
-        if level > 0.9 {
-            Color::Rgb(255, 50, 50) // Bright red when clipping
-        } else if level > 0.3 {
-            Color::Rgb(255, 150, 0) // Orange
-        } else if level > 0.05 {
-            Color::Rgb(200, 100, 0) // Dim orange
-        } else {
-            Color::Rgb(100, 50, 0) // Very dim
-        }
+    match (is_left, level) {
+        // Clipping (both channels show red)
+        (_, l) if l > LED_CLIPPING_LEVEL => Color::Rgb(255, 100, 100),
+        // Left channel (green)
+        (true, l) if l > LED_HIGH_LEVEL => Color::Rgb(100, 255, 100),
+        (true, l) if l > LED_LOW_LEVEL => Color::Rgb(50, 200, 50),
+        (true, _) => Color::Rgb(20, 100, 20),
+        // Right channel (orange/red)
+        (false, l) if l > LED_HIGH_LEVEL => Color::Rgb(255, 150, 0),
+        (false, l) if l > LED_LOW_LEVEL => Color::Rgb(200, 100, 0),
+        (false, _) => Color::Rgb(100, 50, 0),
     }
 }
 
@@ -275,27 +296,25 @@ fn draw_oscilloscope(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_grid(ctx: &mut Context, area: Rect) {
-    let grid_color = Color::Rgb(0, 60, 30); // Dark green
-
     // Vertical grid lines
-    for x in (0..area.width).step_by(10) {
+    for x in (0..area.width).step_by(GRID_VERTICAL_STEP) {
         ctx.draw(&ratatui::widgets::canvas::Line {
             x1: x as f64,
             y1: -1.0,
             x2: x as f64,
             y2: 1.0,
-            color: grid_color,
+            color: GRID_COLOR,
         });
     }
 
     // Horizontal grid lines
-    for y in [-0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75] {
+    for y in GRID_HORIZONTAL_LINES {
         ctx.draw(&ratatui::widgets::canvas::Line {
             x1: 0.0,
             y1: y,
             x2: area.width as f64,
             y2: y,
-            color: grid_color,
+            color: GRID_COLOR,
         });
     }
 }
@@ -351,16 +370,11 @@ fn draw_progress_bar(f: &mut Frame, area: Rect, app: &App) {
 
     // Format time display
     let time_info = if let Some(duration) = app.duration {
-        let total_secs = duration.as_secs();
-        let current_secs = (total_secs as f32 * progress) as u64;
+        let current_secs = (duration.as_secs() as f32 * progress) as u64;
+        let current_time = format_time(current_secs);
+        let total_time = format_duration(duration);
 
-        let current_mins = current_secs / 60;
-        let current_secs = current_secs % 60;
-        let total_mins = total_secs / 60;
-        let total_secs = total_secs % 60;
-
-        let mut time_str =
-            format!("{current_mins:02}:{current_secs:02} / {total_mins:02}:{total_secs:02}");
+        let mut time_str = format!("{current_time} / {total_time}");
 
         // Add selection duration if marks are set
         if let Some(selection_duration) = app.get_selection_duration() {
@@ -478,5 +492,75 @@ fn draw_progress_with_marks(f: &mut Frame, area: Rect, app: &App) {
             let selection = Block::default().style(Style::default().bg(Color::DarkGray));
             f.render_widget(selection, selection_area);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_time() {
+        assert_eq!(format_time(0), "00:00");
+        assert_eq!(format_time(59), "00:59");
+        assert_eq!(format_time(60), "01:00");
+        assert_eq!(format_time(3661), "61:01");
+    }
+
+    #[test]
+    fn test_format_duration() {
+        assert_eq!(format_duration(std::time::Duration::from_secs(0)), "00:00");
+        assert_eq!(
+            format_duration(std::time::Duration::from_secs(125)),
+            "02:05"
+        );
+    }
+
+    #[test]
+    fn test_get_led_char() {
+        assert_eq!(get_led_char(0.0), "○");
+        assert_eq!(get_led_char(0.04), "○");
+        assert_eq!(get_led_char(0.05), "◐");
+        assert_eq!(get_led_char(0.2), "◐");
+        assert_eq!(get_led_char(0.3), "●");
+        assert_eq!(get_led_char(1.0), "●");
+    }
+
+    #[test]
+    fn test_get_led_color_left_channel() {
+        // Test left channel colors
+        assert_eq!(get_led_color(0.01, true), Color::Rgb(20, 100, 20));
+        assert_eq!(get_led_color(0.1, true), Color::Rgb(50, 200, 50));
+        assert_eq!(get_led_color(0.5, true), Color::Rgb(100, 255, 100));
+        assert_eq!(get_led_color(0.95, true), Color::Rgb(255, 100, 100));
+    }
+
+    #[test]
+    fn test_get_led_color_right_channel() {
+        // Test right channel colors
+        assert_eq!(get_led_color(0.01, false), Color::Rgb(100, 50, 0));
+        assert_eq!(get_led_color(0.1, false), Color::Rgb(200, 100, 0));
+        assert_eq!(get_led_color(0.5, false), Color::Rgb(255, 150, 0));
+        assert_eq!(get_led_color(0.95, false), Color::Rgb(255, 100, 100));
+    }
+
+    #[test]
+    fn test_led_clipping_color() {
+        // Both channels should show red when clipping
+        assert_eq!(
+            get_led_color(LED_CLIPPING_LEVEL + 0.01, true),
+            Color::Rgb(255, 100, 100)
+        );
+        assert_eq!(
+            get_led_color(LED_CLIPPING_LEVEL + 0.01, false),
+            Color::Rgb(255, 100, 100)
+        );
+    }
+
+    #[test]
+    fn test_create_control_button() {
+        let button = create_control_button("q", Style::default().fg(Color::Red));
+        assert_eq!(button.content, "[q]");
+        assert_eq!(button.style.fg, Some(Color::Red));
     }
 }
