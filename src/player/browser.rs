@@ -6,7 +6,7 @@
 //! the actual audio files for selection. The search uses substring matching to find
 //! relevant content within the sidecar files.
 
-use log::{debug, info, warn};
+use log::warn;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,6 +17,12 @@ const DEFAULT_CONTEXT_SIZE: usize = 80;
 pub enum BrowserFocus {
     Search,
     Files,
+}
+
+#[derive(Debug, Clone)]
+enum SearchQuery {
+    FullText(String),
+    FieldQuery { field: String, value: String },
 }
 
 #[derive(Clone)]
@@ -65,14 +71,6 @@ impl Browser {
         // Initially show all items with no context
         self.filtered_items = self.items.iter().map(|item| (item.clone(), None)).collect();
 
-        info!("Found {} audio files", self.items.len());
-        let with_sidecar = self
-            .items
-            .iter()
-            .filter(|i| !i.metadata.content.is_empty())
-            .count();
-        info!("  {with_sidecar} have sidecar metadata");
-
         Ok(())
     }
 
@@ -118,7 +116,6 @@ impl Browser {
         sidecar.as_mut_os_string().push(".md");
 
         if sidecar.exists() {
-            debug!("Found sidecar: {sidecar:?}");
             audio_file.sidecar_path = Some(sidecar.clone());
 
             // Read and parse sidecar content
@@ -126,13 +123,6 @@ impl Browser {
                 let mut metadata = parse_sidecar_content(&content);
                 metadata.content = content; // Store full content for searching
                 audio_file.metadata = metadata;
-                debug!(
-                    "Loaded sidecar for {}: {} chars, title: '{}', tags: {:?}",
-                    path.file_name().unwrap_or_default().to_string_lossy(),
-                    audio_file.metadata.content.len(),
-                    audio_file.metadata.title,
-                    audio_file.metadata.tags
-                );
             }
         } else {
             // Use filename as title if no sidecar
@@ -172,14 +162,13 @@ impl Browser {
         if self.search_query.is_empty() {
             self.filtered_items = self.items.iter().map(|item| (item.clone(), None)).collect();
         } else {
-            let query = self.search_query.to_lowercase();
-            debug!("Filtering with query: '{query}'");
+            let parsed_query = parse_search_query(&self.search_query);
 
             // Score each item and find matching context
             let mut scored_items: Vec<(AudioFile, i64, Option<String>)> = self
                 .items
                 .iter()
-                .filter_map(|item| score_item(item, &query))
+                .filter_map(|item| score_item_with_query(item, &parsed_query))
                 .collect();
 
             // Sort by score (highest first)
@@ -189,12 +178,6 @@ impl Browser {
                 .into_iter()
                 .map(|(item, _, context)| (item, context))
                 .collect();
-
-            info!(
-                "Search '{}' returned {} results",
-                query,
-                self.filtered_items.len()
-            );
         }
 
         // Reset selection if out of bounds
@@ -233,6 +216,96 @@ fn is_supported_audio_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn parse_search_query(query: &str) -> SearchQuery {
+    // Check for field queries like "title: something" or "tags: something"
+    if let Some(colon_pos) = query.find(':') {
+        let field = query[..colon_pos].trim().to_lowercase();
+        let value = query[colon_pos + 1..].trim().to_lowercase();
+
+        // Only recognize specific fields (allow both singular and plural for tags)
+        match field.as_str() {
+            "title" | "tags" | "tag" => {
+                // Normalize "tag" to "tags" internally for consistency
+                let normalized_field = if field == "tag" {
+                    "tags".to_string()
+                } else {
+                    field.clone()
+                };
+                SearchQuery::FieldQuery {
+                    field: normalized_field,
+                    value,
+                }
+            }
+            _ => SearchQuery::FullText(query.to_lowercase()),
+        }
+    } else {
+        SearchQuery::FullText(query.to_lowercase())
+    }
+}
+
+fn score_item_with_query(
+    item: &AudioFile,
+    query: &SearchQuery,
+) -> Option<(AudioFile, i64, Option<String>)> {
+    match query {
+        SearchQuery::FullText(text) => score_item(item, text),
+        SearchQuery::FieldQuery { field, value } => score_field_query(item, field, value),
+    }
+}
+
+fn score_field_query(
+    item: &AudioFile,
+    field: &str,
+    value: &str,
+) -> Option<(AudioFile, i64, Option<String>)> {
+    match field {
+        "title" => {
+            // If value is empty, match any item with a non-empty title
+            if value.is_empty() {
+                if !item.metadata.title.is_empty() {
+                    let context = Some(format!("Title: {}", item.metadata.title));
+                    Some((item.clone(), 100, context))
+                } else {
+                    None
+                }
+            } else if item.metadata.title.to_lowercase().contains(value) {
+                let context = Some(format!("Title: {}", item.metadata.title));
+                Some((item.clone(), 100, context))
+            } else {
+                None
+            }
+        }
+        "tags" => {
+            // If value is empty, match any item with tags
+            if value.is_empty() {
+                if !item.metadata.tags.is_empty() {
+                    let context = Some(format!("Tags: {}", item.metadata.tags.join(", ")));
+                    Some((item.clone(), 100, context))
+                } else {
+                    None
+                }
+            } else {
+                // Match against any tag
+                let matching_tags: Vec<&String> = item
+                    .metadata
+                    .tags
+                    .iter()
+                    .filter(|tag| tag.to_lowercase().contains(value))
+                    .collect();
+
+                if !matching_tags.is_empty() {
+                    let tags_str: Vec<&str> = matching_tags.iter().map(|s| s.as_str()).collect();
+                    let context = Some(format!("Tags: {}", tags_str.join(", ")));
+                    Some((item.clone(), 100, context))
+                } else {
+                    None
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
 fn score_item(item: &AudioFile, query: &str) -> Option<(AudioFile, i64, Option<String>)> {
     let mut best_score = None;
     let mut context = None;
@@ -249,15 +322,6 @@ fn score_item(item: &AudioFile, query: &str) -> Option<(AudioFile, i64, Option<S
                 DEFAULT_CONTEXT_SIZE,
             ));
             best_score = Some(100); // High score for exact matches
-
-            debug!(
-                "Content match for {}: substring found at position {}",
-                item.audio_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-                pos
-            );
         }
     }
 
@@ -270,7 +334,6 @@ fn score_item(item: &AudioFile, query: &str) -> Option<(AudioFile, i64, Option<S
 
     if best_score.is_none() && filename.to_lowercase().contains(query) {
         best_score = Some(50); // Lower score for filename matches
-        debug!("Filename match for {filename}");
     }
 
     best_score.map(|score| (item.clone(), score, context))
@@ -307,34 +370,62 @@ fn extract_context(content: &str, pos: usize, context_size: usize) -> String {
 
 fn parse_sidecar_content(content: &str) -> FileMetadata {
     let mut metadata = FileMetadata::default();
-    let mut in_tags = false;
 
-    for line in content.lines() {
-        let line = line.trim();
+    // Check if content has YAML frontmatter
+    if let Some(content_after_marker) = content.strip_prefix("---\n") {
+        // Find the end of frontmatter
+        if let Some(end_pos) = content_after_marker.find("\n---\n") {
+            let yaml_content = &content_after_marker[..end_pos];
 
-        // Extract title from H1
-        if let Some(title) = line.strip_prefix("# ") {
-            metadata.title = title.trim().to_string();
+            // Parse YAML line by line (simple parser for our needs)
+            for line in yaml_content.lines() {
+                let line = line.trim();
+
+                if let Some(colon_pos) = line.find(':') {
+                    let key = line[..colon_pos].trim();
+                    let value = line[colon_pos + 1..].trim();
+
+                    match key {
+                        "title" => {
+                            // Remove quotes if present
+                            metadata.title = value.trim_matches('"').to_string();
+                        }
+                        "tags" => {
+                            // Parse array format: ["tag1", "tag2"] or []
+                            if value.starts_with('[') && value.ends_with(']') {
+                                let tags_str = &value[1..value.len() - 1];
+                                if !tags_str.is_empty() {
+                                    metadata.tags = tags_str
+                                        .split(',')
+                                        .map(|s| s.trim().trim_matches('"').to_string())
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
-        // Extract tags
-        else if let Some(tags_str) = line
-            .strip_prefix("- Tags:")
-            .or_else(|| line.strip_prefix("- tags:"))
-        {
-            let tags_str = tags_str.trim();
-            metadata.tags = tags_str
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
+
+        // Also look for H1 title after frontmatter as fallback
+        if metadata.title.is_empty() {
+            for line in content.lines() {
+                if let Some(title) = line.strip_prefix("# ") {
+                    metadata.title = title.trim().to_string();
+                    break;
+                }
+            }
         }
-        // Look for tag lists
-        else if line == "Tags:" || line == "tags:" {
-            in_tags = true;
-        } else if in_tags && line.starts_with("- ") {
-            metadata.tags.push(line[2..].trim().to_string());
-        } else if in_tags && !line.starts_with('-') && !line.is_empty() {
-            in_tags = false;
+    } else {
+        // Fallback to old markdown parsing for files without frontmatter
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(title) = line.strip_prefix("# ") {
+                metadata.title = title.trim().to_string();
+                break;
+            }
         }
     }
 
@@ -451,24 +542,38 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_sidecar_content() {
-        let content = r#"# My Audio File
-- Tags: ambient, drone, experimental
+    fn test_parse_sidecar_content_yaml() {
+        // Test YAML frontmatter format
+        let content = r#"---
+title: "My Audio File"
+tags: ["ambient", "drone", "experimental"]
+---
+
+# My Audio File
 
 Some description here.
-More content.
-
-Tags:
-- field-recording
-- nature
 "#;
 
         let metadata = parse_sidecar_content(content);
 
         assert_eq!(metadata.title, "My Audio File");
-        assert_eq!(metadata.tags.len(), 5);
+        assert_eq!(metadata.tags.len(), 3);
         assert!(metadata.tags.contains(&"ambient".to_string()));
-        assert!(metadata.tags.contains(&"field-recording".to_string()));
+        assert!(metadata.tags.contains(&"drone".to_string()));
+        assert!(metadata.tags.contains(&"experimental".to_string()));
+    }
+
+    #[test]
+    fn test_parse_sidecar_content_markdown() {
+        // Test old markdown format (fallback)
+        let content = r#"# My Audio File
+
+Some description here.
+"#;
+
+        let metadata = parse_sidecar_content(content);
+        assert_eq!(metadata.title, "My Audio File");
+        assert!(metadata.tags.is_empty());
     }
 
     #[test]
@@ -554,13 +659,27 @@ Tags:
         let sidecar_path = temp_dir.path().join("test.wav.md");
 
         fs::write(&audio_path, b"fake wav").unwrap();
-        fs::write(&sidecar_path, "# Test Audio\n- Tags: test, sample").unwrap();
+        fs::write(
+            &sidecar_path,
+            r#"---
+title: "Test Audio"
+tags: ["test", "sample"]
+---
+
+# Test Audio
+
+Some content here.
+"#,
+        )
+        .unwrap();
 
         let browser = create_test_browser();
         let audio_file = browser.create_audio_file(audio_path).unwrap();
 
         assert_eq!(audio_file.metadata.title, "Test Audio");
         assert_eq!(audio_file.metadata.tags.len(), 2);
+        assert!(audio_file.metadata.tags.contains(&"test".to_string()));
+        assert!(audio_file.metadata.tags.contains(&"sample".to_string()));
         assert!(audio_file.sidecar_path.is_some());
     }
 

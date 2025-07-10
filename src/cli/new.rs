@@ -106,7 +106,17 @@ pub fn handle_new(name: Option<&str>, path: Option<&str>) -> Result<(), Box<dyn 
 
     // Create project metadata file
     pb.set_message("Creating project metadata...");
-    project::create_project_metadata(&project_path, &project_name, &config.default_artist)?;
+    let display_name = if original_name != project_name {
+        Some(original_name.as_str())
+    } else {
+        None
+    };
+    project::create_project_metadata(
+        &project_path,
+        &project_name,
+        &config.default_artist,
+        display_name,
+    )?;
     thread::sleep(Duration::from_millis(100));
     pb.inc(1);
 

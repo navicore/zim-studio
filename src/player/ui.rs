@@ -529,7 +529,7 @@ fn draw_browser_search_bar(f: &mut Frame, area: Rect, browser: &super::browser::
     use super::browser::BrowserFocus;
 
     let search_text = if browser.search_query.is_empty() {
-        "Type to filter files...".to_string()
+        "Type to search or use 'title:' or 'tag:'...".to_string()
     } else {
         browser.search_query.clone()
     };
@@ -705,7 +705,7 @@ fn draw_browser_help(f: &mut Frame, area: Rect, browser: &super::browser::Browse
 
     let help_text = match browser.focus {
         BrowserFocus::Search => {
-            "Type to search (including spaces) | Tab: Switch to files | Esc: Back | ←→: Seek"
+            "Type to search | Try: 'title: my song' or 'tag: ambient' | Tab: Switch to files | Esc: Back | ←→: Seek"
         }
         BrowserFocus::Files => {
             "j/k or ↑↓: Navigate | Enter: Select | Tab: Switch to search | Esc: Back | Space: Play/Pause | h/l or ←→: Seek"
