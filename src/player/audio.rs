@@ -188,12 +188,6 @@ impl AudioEngine {
         if self.total_samples > 0 {
             let played = self.samples_played.load(Ordering::Relaxed);
             let progress = played as f32 / self.total_samples as f32;
-            log::debug!(
-                "Progress: {} / {} = {}",
-                played,
-                self.total_samples,
-                progress
-            );
             progress.min(1.0)
         } else {
             0.0
@@ -384,11 +378,7 @@ impl Iterator for WavSource {
         self.position += 1;
 
         // Update samples played counter
-        let count = self.samples_played.fetch_add(1, Ordering::Relaxed);
-        if count % 44100 == 0 {
-            // Log every second (assuming 44.1kHz)
-            log::debug!("Samples played: {count}");
-        }
+        let _count = self.samples_played.fetch_add(1, Ordering::Relaxed);
 
         // Convert to i16 based on bit depth
         let sample_i16 = match self.bits_per_sample {
@@ -490,11 +480,7 @@ impl Iterator for FlacSource {
         self.position += 1;
 
         // Update samples played counter
-        let count = self.samples_played.fetch_add(1, Ordering::Relaxed);
-        if count % 44100 == 0 {
-            // Log every second (assuming 44.1kHz)
-            log::debug!("Samples played: {count}");
-        }
+        let _count = self.samples_played.fetch_add(1, Ordering::Relaxed);
 
         // Convert to i16 based on bit depth
         let sample_i16 = match self.bits_per_sample {

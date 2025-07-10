@@ -61,8 +61,13 @@ pub fn create_project_metadata(
     project_path: &Path,
     project_name: &str,
     artist: &str,
+    display_name: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
     let metadata_path = project_path.join("README.md");
+
+    // Use display_name if provided, otherwise use project_name
+    let display_title = display_name.unwrap_or(project_name);
+
     let content = format!(
         r#"---
 name: "{}"
@@ -95,10 +100,10 @@ art: []
 
 [Document any visual inspiration, artwork, or graphics associated with this project]
 "#,
-        project_name,
+        display_title,
         artist,
         chrono::Local::now().format("%Y-%m-%d"),
-        project_name
+        display_title
     );
 
     fs::write(metadata_path, content)?;
