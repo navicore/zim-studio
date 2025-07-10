@@ -705,7 +705,7 @@ fn draw_browser_help(f: &mut Frame, area: Rect, browser: &super::browser::Browse
 
     let help_text = match browser.focus {
         BrowserFocus::Search => {
-            "Type to search | Tab: Switch to files | Esc: Back | Space: Play/Pause | ←→: Seek"
+            "Type to search (including spaces) | Tab: Switch to files | Esc: Back | ←→: Seek"
         }
         BrowserFocus::Files => {
             "j/k or ↑↓: Navigate | Enter: Select | Tab: Switch to search | Esc: Back | Space: Play/Pause | h/l or ←→: Seek"

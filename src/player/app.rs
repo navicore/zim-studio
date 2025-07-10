@@ -715,13 +715,6 @@ fn handle_integrated_browser_keys(
             app.browser.toggle_focus();
             return Ok(());
         }
-        KeyCode::Char(' ') => {
-            // Toggle play/pause (works regardless of focus)
-            if app.current_file.is_some() {
-                app.toggle_playback();
-            }
-            return Ok(());
-        }
         KeyCode::Left => {
             // Seek backward (works regardless of focus)
             if app.current_file.is_some() {
@@ -768,6 +761,21 @@ fn handle_integrated_browser_keys(
                     // Seek forward
                     if app.current_file.is_some() {
                         seek_audio(app, 5.0);
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    // Toggle play/pause (only in Files focus)
+                    // First ensure we have the selected file loaded
+                    if let Some(path) = app.browser.get_selected_path() {
+                        let path_str = path.to_string_lossy().to_string();
+
+                        // If no file is loaded or it's different from the selected one, load it
+                        if app.current_file.as_ref() != Some(&path_str) {
+                            preview_selected_file(app)?;
+                        }
+
+                        // Now toggle playback
+                        app.toggle_playback();
                     }
                 }
                 KeyCode::Enter => {
