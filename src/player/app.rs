@@ -703,53 +703,120 @@ fn handle_integrated_browser_keys(
     app: &mut App,
     key: event::KeyEvent,
 ) -> Result<(), Box<dyn Error>> {
-    // Regular browser navigation
+    use super::browser::BrowserFocus;
+
+    // Universal keys that work regardless of focus
     match key.code {
-        KeyCode::Esc | KeyCode::Char('b') => {
+        KeyCode::Esc => {
             app.view_mode = ViewMode::Player;
+            return Ok(());
         }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.browser.select_previous();
-            // Auto-load the selected file for preview
-            preview_selected_file(app)?;
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.browser.select_next();
-            // Auto-load the selected file for preview
-            preview_selected_file(app)?;
-        }
-        KeyCode::Enter => {
-            // Load file and return to player
-            if let Some(path) = app.browser.get_selected_path() {
-                let path_str = path.to_string_lossy().to_string();
-                app.load_file(&path_str)?;
-                app.view_mode = ViewMode::Player;
-            }
+        KeyCode::Tab => {
+            app.browser.toggle_focus();
+            return Ok(());
         }
         KeyCode::Char(' ') => {
-            // Toggle play/pause in browser mode
+            // Toggle play/pause (works regardless of focus)
             if app.current_file.is_some() {
                 app.toggle_playback();
             }
+            return Ok(());
         }
         KeyCode::Left => {
-            // Seek backward in browser mode
+            // Seek backward (works regardless of focus)
             if app.current_file.is_some() {
                 seek_audio(app, -5.0);
             }
+            return Ok(());
         }
         KeyCode::Right => {
-            // Seek forward in browser mode
+            // Seek forward (works regardless of focus)
             if app.current_file.is_some() {
                 seek_audio(app, 5.0);
             }
-        }
-        KeyCode::Backspace => app.browser.pop_char(),
-        KeyCode::Char(c) => {
-            app.browser.push_char(c);
+            return Ok(());
         }
         _ => {}
     }
+
+    // Focus-specific keys
+    match app.browser.focus {
+        BrowserFocus::Search => match key.code {
+            KeyCode::Backspace => app.browser.pop_char(),
+            KeyCode::Char(c) => app.browser.push_char(c),
+            _ => {}
+        },
+        BrowserFocus::Files => {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    app.browser.select_previous();
+                    // Auto-load the selected file for preview
+                    preview_selected_file(app)?;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    app.browser.select_next();
+                    // Auto-load the selected file for preview
+                    preview_selected_file(app)?;
+                }
+                KeyCode::Char('h') => {
+                    // Seek backward
+                    if app.current_file.is_some() {
+                        seek_audio(app, -5.0);
+                    }
+                }
+                KeyCode::Char('l') => {
+                    // Seek forward
+                    if app.current_file.is_some() {
+                        seek_audio(app, 5.0);
+                    }
+                }
+                KeyCode::Enter => {
+                    // Load file and return to player
+                    if let Some(path) = app.browser.get_selected_path() {
+                        let path_str = path.to_string_lossy().to_string();
+
+                        // Check if we're already playing this file
+                        let was_playing_this_file = app.current_file.as_ref() == Some(&path_str);
+                        let current_position = if was_playing_this_file {
+                            Some(app.playback_position)
+                        } else {
+                            None
+                        };
+                        let was_playing = app.is_playing;
+
+                        // Load the file (this resets position to 0)
+                        app.load_file(&path_str)?;
+
+                        // If we were previewing this file, restore the position
+                        if let Some(position) = current_position {
+                            // Seek to the previous position
+                            if let Some(duration) = app.duration {
+                                if let Some(engine) = &mut app.audio_engine {
+                                    // Since load_file resets to position 0, we need to seek forward
+                                    // by the absolute amount
+                                    let target_seconds = duration.as_secs_f32() * position;
+                                    engine.seek_relative(target_seconds)?;
+                                    // Note: playback_position will be updated by the next update_waveform call
+                                }
+                            }
+
+                            // Restore play state if it was playing
+                            if was_playing {
+                                app.is_playing = true;
+                                if let Some(engine) = &app.audio_engine {
+                                    engine.play();
+                                }
+                            }
+                        }
+
+                        app.view_mode = ViewMode::Player;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -782,11 +849,14 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
         KeyCode::Char(' ') => app.toggle_playback(),
         KeyCode::Char('b') => {
             app.view_mode = ViewMode::Browser;
+            app.browser.focus = super::browser::BrowserFocus::Files;
             // Initialize browser with current directory
             app.browser.scan_directory(std::path::Path::new("."))?;
         }
         KeyCode::Char('/') => {
             app.view_mode = ViewMode::Browser;
+            app.browser.focus = super::browser::BrowserFocus::Search;
+            app.browser.clear_search();
             // Initialize browser with current directory
             app.browser.scan_directory(std::path::Path::new("."))?;
         }
