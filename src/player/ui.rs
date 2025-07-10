@@ -500,7 +500,7 @@ fn draw_progress_with_marks(f: &mut Frame, area: Rect, app: &App) {
 fn draw_integrated_browser(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    // Layout: Search bar, file list with preview, mini player
+    // Layout: Search bar, file list with preview, mini player, help
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1) // Add margin around the entire layout
@@ -508,6 +508,7 @@ fn draw_integrated_browser(f: &mut Frame, app: &App) {
             Constraint::Length(3), // Search bar
             Constraint::Min(10),   // File browser
             Constraint::Length(1), // Mini player - just one line
+            Constraint::Length(1), // Help hint
         ])
         .split(size);
 
@@ -519,27 +520,51 @@ fn draw_integrated_browser(f: &mut Frame, app: &App) {
 
     // Draw mini player
     draw_mini_player(f, chunks[2], app);
+
+    // Draw help hint
+    draw_browser_help(f, chunks[3], &app.browser);
 }
 
 fn draw_browser_search_bar(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
+    use super::browser::BrowserFocus;
+
     let search_text = if browser.search_query.is_empty() {
-        "Search: Type to filter files...".to_string()
+        "Type to filter files...".to_string()
     } else {
-        format!("Search: {}", browser.search_query)
+        browser.search_query.clone()
+    };
+
+    let title = if browser.focus == BrowserFocus::Search {
+        "Search (Active) - Tab to switch"
+    } else {
+        "Search - Tab to switch"
+    };
+
+    let border_style = if browser.focus == BrowserFocus::Search {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
     };
 
     let search = Paragraph::new(search_text)
-        .block(Block::default().borders(Borders::ALL).title("Search"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
         .style(if browser.search_query.is_empty() {
-            Style::default().fg(Color::Gray)
+            Style::default().fg(Color::DarkGray)
         } else {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(Color::White)
         });
 
     f.render_widget(search, area);
 }
 
 fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
+    use super::browser::BrowserFocus;
+
     // Split horizontally for file list and preview
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -572,8 +597,25 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
         })
         .collect();
 
+    let title = if browser.focus == BrowserFocus::Files {
+        "Files (Active) - j/k to navigate, Enter to select"
+    } else {
+        "Files - Tab to switch"
+    };
+
+    let border_style = if browser.focus == BrowserFocus::Files {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
     let file_list = Paragraph::new(files)
-        .block(Block::default().borders(Borders::ALL).title("Files"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
         .scroll((browser.selected.saturating_sub(10) as u16, 0));
 
     f.render_widget(file_list, chunks[0]);
@@ -656,6 +698,26 @@ fn draw_mini_player(f: &mut Frame, area: Rect, app: &App) {
 
     let led_widget = Paragraph::new(leds).alignment(Alignment::Center);
     f.render_widget(led_widget, chunks[3]);
+}
+
+fn draw_browser_help(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
+    use super::browser::BrowserFocus;
+
+    let help_text = match browser.focus {
+        BrowserFocus::Search => {
+            "Type to search | Tab: Switch to files | Esc: Back | Space: Play/Pause | ←→: Seek"
+        }
+        BrowserFocus::Files => {
+            "j/k or ↑↓: Navigate | Enter: Select | Tab: Switch to search | Esc: Back | Space: Play/Pause | h/l or ←→: Seek"
+        }
+    };
+
+    let help_style = Style::default().fg(Color::DarkGray);
+    let help = Paragraph::new(help_text)
+        .style(help_style)
+        .alignment(Alignment::Center);
+
+    f.render_widget(help, area);
 }
 
 #[cfg(test)]

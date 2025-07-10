@@ -13,6 +13,12 @@ use std::path::{Path, PathBuf};
 const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &["wav", "flac"];
 const DEFAULT_CONTEXT_SIZE: usize = 80;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BrowserFocus {
+    Search,
+    Files,
+}
+
 #[derive(Clone)]
 pub struct AudioFile {
     pub audio_path: PathBuf,
@@ -32,6 +38,7 @@ pub struct Browser {
     pub filtered_items: Vec<(AudioFile, Option<String>)>, // (file, matched_context)
     pub selected: usize,
     pub search_query: String,
+    pub focus: BrowserFocus,
 }
 
 impl Browser {
@@ -41,6 +48,7 @@ impl Browser {
             filtered_items: Vec::new(),
             selected: 0,
             search_query: String::new(),
+            focus: BrowserFocus::Search,
         }
     }
 
@@ -145,6 +153,18 @@ impl Browser {
 
     pub fn pop_char(&mut self) {
         self.search_query.pop();
+        self.filter_items();
+    }
+
+    pub fn toggle_focus(&mut self) {
+        self.focus = match self.focus {
+            BrowserFocus::Search => BrowserFocus::Files,
+            BrowserFocus::Files => BrowserFocus::Search,
+        };
+    }
+
+    pub fn clear_search(&mut self) {
+        self.search_query.clear();
         self.filter_items();
     }
 
