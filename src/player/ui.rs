@@ -664,9 +664,19 @@ fn draw_mini_player(f: &mut Frame, area: Rect, app: &App) {
 
     // Progress bar with inline percentage text
     let progress = (app.playback_position * 100.0) as u16;
+
+    // Change label style when progress bar passes over the percentage text
+    let label_style = if progress >= 50 {
+        Style::default()
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
     let progress_bar = Gauge::default()
         .percent(progress)
-        .label(format!("{progress}%"))
+        .label(Span::styled(format!("{progress}%"), label_style))
         .style(Style::default().fg(Color::DarkGray))
         .gauge_style(Style::default().fg(Color::Cyan));
     f.render_widget(progress_bar, chunks[1]);
