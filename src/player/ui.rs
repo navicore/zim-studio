@@ -172,6 +172,13 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         }),
         create_control_button("s", Style::default().fg(Color::Cyan)),
         Span::raw(" save"),
+        Span::raw("  "),
+        create_control_button("t", Style::default().fg(Color::Yellow)),
+        Span::raw(if app.telemetry.config().enabled {
+            " telemetry ●"
+        } else {
+            " telemetry"
+        }),
     ];
 
     let controls_widget1 = Paragraph::new(Line::from(controls_row1)).alignment(Alignment::Center);

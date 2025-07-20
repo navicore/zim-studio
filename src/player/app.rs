@@ -17,6 +17,7 @@ use std::{error::Error, io, time::Duration};
 use super::audio::AudioEngine;
 use super::browser::Browser;
 use super::save_dialog::SaveDialog;
+use super::telemetry::{AudioTelemetry, TelemetryConfig};
 use super::ui;
 use super::waveform::WaveformBuffer;
 use std::sync::mpsc;
@@ -46,6 +47,9 @@ pub struct App {
     pub save_dialog: Option<SaveDialog>,
     pub is_looping: bool, // Whether we're looping the selection
     pub view_mode: ViewMode,
+    pub telemetry: AudioTelemetry,
+    previous_left_level: f32,  // For slew gate rate calculation
+    previous_right_level: f32, // For slew gate rate calculation
 }
 
 impl App {
@@ -69,6 +73,9 @@ impl App {
             save_dialog: None,
             is_looping: false,
             view_mode: ViewMode::Player,
+            telemetry: AudioTelemetry::new(),
+            previous_left_level: 0.0,
+            previous_right_level: 0.0,
         }
     }
 
@@ -98,6 +105,43 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Enable telemetry with custom configuration for debugging slew gates and VC control
+    #[allow(dead_code)]
+    pub fn enable_telemetry(&mut self, config: TelemetryConfig) {
+        self.telemetry.update_config(config);
+    }
+
+    /// Enable telemetry with default debugging configuration
+    pub fn enable_debug_telemetry(&mut self) {
+        let config = TelemetryConfig {
+            enabled: true,
+            debug_slew_gates: true,
+            debug_vc_control: true,
+            capture_interval_ms: 100, // 10Hz for debugging
+            output_format: "log".to_string(),
+            ..Default::default()
+        };
+        self.telemetry.update_config(config);
+        log::info!("Audio telemetry enabled for slew gate and VC control debugging");
+    }
+
+    /// Disable telemetry
+    pub fn disable_telemetry(&mut self) {
+        let mut config = self.telemetry.config().clone();
+        config.enabled = false;
+        self.telemetry.update_config(config);
+    }
+
+    /// Export telemetry data
+    #[allow(dead_code)]
+    pub fn export_telemetry(&self, format: &str) -> Result<String, Box<dyn Error>> {
+        match format {
+            "json" => Ok(self.telemetry.export_json()?),
+            "csv" => Ok(self.telemetry.export_csv()),
+            _ => Err("Unsupported export format. Use 'json' or 'csv'".into()),
+        }
     }
 
     pub fn toggle_playback(&mut self) {
@@ -140,6 +184,10 @@ impl App {
     }
 
     fn calculate_audio_levels(&mut self, samples: &[f32]) {
+        // Store previous levels for slew gate calculation
+        self.previous_left_level = self.left_level;
+        self.previous_right_level = self.right_level;
+
         if self.is_stereo {
             self.calculate_stereo_levels(samples);
         } else {
@@ -149,6 +197,25 @@ impl App {
         // Apply gentler decay for better visibility
         self.left_level = (self.left_level * 0.98).max(self.left_level * 0.8);
         self.right_level = (self.right_level * 0.98).max(self.right_level * 0.8);
+
+        // Capture telemetry data for observability
+        let playback_state = if self.is_playing {
+            "playing"
+        } else {
+            "stopped"
+        };
+        let audio_info = self.audio_engine.as_ref().and_then(|e| e.info.as_ref());
+
+        self.telemetry.maybe_capture(
+            self.left_level,
+            self.right_level,
+            self.previous_left_level,
+            self.previous_right_level,
+            playback_state,
+            self.playback_position,
+            Some(samples),
+            audio_info,
+        );
     }
 
     fn calculate_stereo_levels(&mut self, samples: &[f32]) {
@@ -230,6 +297,10 @@ impl App {
     }
 
     fn apply_level_decay(&mut self) {
+        // Store previous levels for slew gate calculation
+        self.previous_left_level = self.left_level;
+        self.previous_right_level = self.right_level;
+
         if self.is_playing {
             self.left_level *= 0.99; // Slower decay for better visibility
             self.right_level *= 0.99;
@@ -237,6 +308,25 @@ impl App {
             self.left_level = 0.0;
             self.right_level = 0.0;
         }
+
+        // Capture telemetry for decay behavior (slew gate monitoring)
+        let playback_state = if self.is_playing {
+            "playing"
+        } else {
+            "stopped"
+        };
+        let audio_info = self.audio_engine.as_ref().and_then(|e| e.info.as_ref());
+
+        self.telemetry.maybe_capture(
+            self.left_level,
+            self.right_level,
+            self.previous_left_level,
+            self.previous_right_level,
+            playback_state,
+            self.playback_position,
+            None, // No sample data during decay
+            audio_info,
+        );
     }
 
     pub fn set_mark_in(&mut self) {
@@ -837,7 +927,10 @@ fn preview_selected_file(app: &mut App) -> Result<(), Box<dyn Error>> {
 
     if let Some(path_str) = selected_path {
         // Only load if it's an audio file and different from current
-        if (path_str.ends_with(".wav") || path_str.ends_with(".flac"))
+        if (path_str.ends_with(".wav")
+            || path_str.ends_with(".flac")
+            || path_str.ends_with(".aiff")
+            || path_str.ends_with(".aif"))
             && app.current_file.as_ref() != Some(&path_str)
         {
             app.load_file(&path_str)?;
@@ -875,6 +968,15 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
         KeyCode::Char('x') => app.clear_marks(),
         KeyCode::Char('s') => app.open_save_dialog(),
         KeyCode::Char('l') => app.toggle_loop(),
+        KeyCode::Char('t') => {
+            if app.telemetry.config().enabled {
+                app.disable_telemetry();
+                info!("Audio telemetry disabled");
+            } else {
+                app.enable_debug_telemetry();
+                info!("Audio telemetry enabled - press 't' again to disable");
+            }
+        }
         _ => {}
     }
     Ok(())
