@@ -1,8 +1,8 @@
-//! Audio telemetry and observability system for debugging slew gates and VC control.
+//! Audio telemetry and observability system for debugging audio playback and format issues.
 //!
 //! This module provides real-time monitoring and structured logging for audio
-//! processing parameters, specifically focusing on level meters (VC control)
-//! and decay functions (slew gates). It helps debug audio behavior by capturing
+//! processing parameters, specifically focusing on level meters, sample rates,
+//! and audio format detection. It helps debug audio behavior by capturing
 //! detailed metrics and providing configurable output formats.
 
 use serde::{Deserialize, Serialize};
@@ -18,10 +18,10 @@ pub struct TelemetryConfig {
     pub buffer_size: usize,
     /// Minimum interval between telemetry captures (ms)
     pub capture_interval_ms: u64,
-    /// Enable detailed slew gate debugging
-    pub debug_slew_gates: bool,
-    /// Enable VC control parameter tracking
-    pub debug_vc_control: bool,
+    /// Enable audio level debugging
+    pub debug_audio_levels: bool,
+    /// Enable audio format parameter tracking
+    pub debug_format_info: bool,
     /// Output format: "json", "csv", "log"
     pub output_format: String,
     /// File path for telemetry output (optional)
@@ -34,17 +34,17 @@ impl Default for TelemetryConfig {
             enabled: false,
             buffer_size: 1000,
             capture_interval_ms: 50, // 20Hz sampling
-            debug_slew_gates: true,
-            debug_vc_control: true,
+            debug_audio_levels: true,
+            debug_format_info: true,
             output_format: "log".to_string(),
             output_file: None,
         }
     }
 }
 
-/// Slew gate parameters for rate limiting and smoothing
+/// Audio level metrics for monitoring channel levels and smoothing
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SlewGateMetrics {
+pub struct AudioLevelMetrics {
     /// Current decay factor (0.0-1.0)
     pub decay_factor: f32,
     /// Rate of change per sample
@@ -53,15 +53,15 @@ pub struct SlewGateMetrics {
     pub input_level: f32,
     /// Output level after slewing
     pub output_level: f32,
-    /// Whether gate is actively limiting
-    pub is_limiting: bool,
+    /// Whether smoothing is actively applied
+    pub is_smoothing: bool,
     /// Channel identifier (L/R)
     pub channel: String,
 }
 
-/// VC (Voltage Control) parameters for level calculation
+/// Audio format metrics for monitoring format and level calculation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VcControlMetrics {
+pub struct AudioFormatMetrics {
     /// RMS calculation input samples count
     pub sample_count: usize,
     /// Raw RMS value before scaling
@@ -83,12 +83,12 @@ pub struct TelemetrySnapshot {
     pub timestamp_secs: f64,
     /// Playback state (playing/stopped)
     pub playback_state: String,
-    /// Left channel slew gate metrics
-    pub left_slew: SlewGateMetrics,
-    /// Right channel slew gate metrics  
-    pub right_slew: SlewGateMetrics,
-    /// VC control metrics
-    pub vc_control: VcControlMetrics,
+    /// Left channel audio level metrics
+    pub left_channel: AudioLevelMetrics,
+    /// Right channel audio level metrics  
+    pub right_channel: AudioLevelMetrics,
+    /// Audio format metrics
+    pub format_info: AudioFormatMetrics,
     /// Current playback position (0.0-1.0)
     pub playback_position: f32,
 }
@@ -221,8 +221,8 @@ impl AudioTelemetry {
         audio_info: Option<&crate::player::audio::AudioInfo>,
         timestamp: Instant,
     ) -> TelemetrySnapshot {
-        // Calculate slew gate metrics
-        let left_slew = SlewGateMetrics {
+        // Calculate audio level metrics
+        let left_channel = AudioLevelMetrics {
             decay_factor: if playback_state == "playing" {
                 0.99
             } else {
@@ -231,11 +231,11 @@ impl AudioTelemetry {
             rate_of_change: left_level - left_prev,
             input_level: left_prev,
             output_level: left_level,
-            is_limiting: (left_level - left_prev).abs() > 0.01,
+            is_smoothing: (left_level - left_prev).abs() > 0.01,
             channel: "L".to_string(),
         };
 
-        let right_slew = SlewGateMetrics {
+        let right_channel = AudioLevelMetrics {
             decay_factor: if playback_state == "playing" {
                 0.99
             } else {
@@ -244,12 +244,12 @@ impl AudioTelemetry {
             rate_of_change: right_level - right_prev,
             input_level: right_prev,
             output_level: right_level,
-            is_limiting: (right_level - right_prev).abs() > 0.01,
+            is_smoothing: (right_level - right_prev).abs() > 0.01,
             channel: "R".to_string(),
         };
 
-        // Calculate VC control metrics
-        let vc_control = if let Some(samples) = sample_data {
+        // Calculate format metrics
+        let format_info = if let Some(samples) = sample_data {
             let sample_count = samples.len();
             let raw_rms = if sample_count > 0 {
                 let sum: f32 = samples.iter().map(|s| s * s).sum();
@@ -260,7 +260,7 @@ impl AudioTelemetry {
             let scaled_rms = raw_rms * 2.0; // Based on current scaling in code
             let final_level = scaled_rms.min(1.0);
 
-            VcControlMetrics {
+            AudioFormatMetrics {
                 sample_count,
                 raw_rms,
                 scaled_rms,
@@ -277,7 +277,7 @@ impl AudioTelemetry {
                 sample_rate: audio_info.map(|i| i.sample_rate).unwrap_or(0),
             }
         } else {
-            VcControlMetrics {
+            AudioFormatMetrics {
                 sample_count: 0,
                 raw_rms: 0.0,
                 scaled_rms: 0.0,
@@ -290,9 +290,9 @@ impl AudioTelemetry {
         TelemetrySnapshot {
             timestamp_secs: timestamp.duration_since(self.start_time).as_secs_f64(),
             playback_state: playback_state.to_string(),
-            left_slew,
-            right_slew,
-            vc_control,
+            left_channel,
+            right_channel,
+            format_info,
             playback_position,
         }
     }
@@ -319,7 +319,7 @@ impl AudioTelemetry {
 
     fn output_json(&self, snapshot: &TelemetrySnapshot) {
         if let Ok(json) = serde_json::to_string(snapshot) {
-            if self.config.debug_slew_gates || self.config.debug_vc_control {
+            if self.config.debug_audio_levels || self.config.debug_format_info {
                 log::debug!("TELEMETRY_JSON: {json}");
             }
         }
@@ -330,47 +330,47 @@ impl AudioTelemetry {
             "{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{:.3}",
             snapshot.timestamp_secs,
             snapshot.playback_state,
-            snapshot.left_slew.input_level,
-            snapshot.left_slew.output_level,
-            snapshot.left_slew.rate_of_change,
-            snapshot.right_slew.input_level,
-            snapshot.right_slew.output_level,
-            snapshot.right_slew.rate_of_change,
-            snapshot.vc_control.sample_count,
-            snapshot.vc_control.raw_rms,
+            snapshot.left_channel.input_level,
+            snapshot.left_channel.output_level,
+            snapshot.left_channel.rate_of_change,
+            snapshot.right_channel.input_level,
+            snapshot.right_channel.output_level,
+            snapshot.right_channel.rate_of_change,
+            snapshot.format_info.sample_count,
+            snapshot.format_info.raw_rms,
             snapshot.playback_position
         );
 
-        if self.config.debug_slew_gates || self.config.debug_vc_control {
+        if self.config.debug_audio_levels || self.config.debug_format_info {
             log::debug!("TELEMETRY_CSV: {csv_line}");
         }
     }
 
     fn output_log(&self, snapshot: &TelemetrySnapshot) {
-        if self.config.debug_slew_gates {
+        if self.config.debug_audio_levels {
             log::debug!(
-                "SLEW_GATES: L[{:.3}->{:.3} Δ{:.3} limit:{}] R[{:.3}->{:.3} Δ{:.3} limit:{}] decay:{:.2}",
-                snapshot.left_slew.input_level,
-                snapshot.left_slew.output_level,
-                snapshot.left_slew.rate_of_change,
-                snapshot.left_slew.is_limiting,
-                snapshot.right_slew.input_level,
-                snapshot.right_slew.output_level,
-                snapshot.right_slew.rate_of_change,
-                snapshot.right_slew.is_limiting,
-                snapshot.left_slew.decay_factor
+                "AUDIO_LEVELS: L[{:.3}->{:.3} Δ{:.3} smooth:{}] R[{:.3}->{:.3} Δ{:.3} smooth:{}] decay:{:.2}",
+                snapshot.left_channel.input_level,
+                snapshot.left_channel.output_level,
+                snapshot.left_channel.rate_of_change,
+                snapshot.left_channel.is_smoothing,
+                snapshot.right_channel.input_level,
+                snapshot.right_channel.output_level,
+                snapshot.right_channel.rate_of_change,
+                snapshot.right_channel.is_smoothing,
+                snapshot.left_channel.decay_factor
             );
         }
 
-        if self.config.debug_vc_control {
+        if self.config.debug_format_info {
             log::debug!(
-                "VC_CONTROL: samples:{} rms:{:.3} scaled:{:.3} final:{:.3} format:{} rate:{}Hz pos:{:.1}%",
-                snapshot.vc_control.sample_count,
-                snapshot.vc_control.raw_rms,
-                snapshot.vc_control.scaled_rms,
-                snapshot.vc_control.final_level,
-                snapshot.vc_control.audio_format,
-                snapshot.vc_control.sample_rate,
+                "FORMAT_INFO: samples:{} rms:{:.3} scaled:{:.3} final:{:.3} format:{} rate:{}Hz pos:{:.1}%",
+                snapshot.format_info.sample_count,
+                snapshot.format_info.raw_rms,
+                snapshot.format_info.scaled_rms,
+                snapshot.format_info.final_level,
+                snapshot.format_info.audio_format,
+                snapshot.format_info.sample_rate,
                 snapshot.playback_position * 100.0
             );
         }
@@ -417,14 +417,14 @@ impl AudioTelemetry {
                 "{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{:.3},{:.3}\n",
                 snapshot.timestamp_secs,
                 snapshot.playback_state,
-                snapshot.left_slew.input_level,
-                snapshot.left_slew.output_level,
-                snapshot.left_slew.rate_of_change,
-                snapshot.right_slew.input_level,
-                snapshot.right_slew.output_level,
-                snapshot.right_slew.rate_of_change,
-                snapshot.vc_control.sample_count,
-                snapshot.vc_control.raw_rms,
+                snapshot.left_channel.input_level,
+                snapshot.left_channel.output_level,
+                snapshot.left_channel.rate_of_change,
+                snapshot.right_channel.input_level,
+                snapshot.right_channel.output_level,
+                snapshot.right_channel.rate_of_change,
+                snapshot.format_info.sample_count,
+                snapshot.format_info.raw_rms,
                 snapshot.playback_position
             ));
         }
@@ -443,8 +443,8 @@ mod tests {
         assert!(!config.enabled);
         assert_eq!(config.buffer_size, 1000);
         assert_eq!(config.capture_interval_ms, 50);
-        assert!(config.debug_slew_gates);
-        assert!(config.debug_vc_control);
+        assert!(config.debug_audio_levels);
+        assert!(config.debug_format_info);
         assert_eq!(config.output_format, "log");
         assert!(config.output_file.is_none());
     }
@@ -480,8 +480,8 @@ mod tests {
 
         let snapshot = &telemetry.snapshots[0];
         assert_eq!(snapshot.playback_state, "playing");
-        assert_eq!(snapshot.left_slew.output_level, 0.5);
-        assert_eq!(snapshot.right_slew.output_level, 0.6);
+        assert_eq!(snapshot.left_channel.output_level, 0.5);
+        assert_eq!(snapshot.right_channel.output_level, 0.6);
     }
 
     #[test]
@@ -496,10 +496,10 @@ mod tests {
         telemetry.force_capture(0.8, 0.9, 0.1, 0.2, "playing", 0.5, None, None);
 
         let snapshot = &telemetry.snapshots[0];
-        assert!(snapshot.left_slew.is_limiting); // Large change should trigger limiting
-        assert!(snapshot.right_slew.is_limiting);
-        assert_eq!(snapshot.left_slew.rate_of_change, 0.7); // 0.8 - 0.1
-        assert_eq!(snapshot.right_slew.rate_of_change, 0.7); // 0.9 - 0.2
+        assert!(snapshot.left_channel.is_smoothing); // Large change should trigger limiting
+        assert!(snapshot.right_channel.is_smoothing);
+        assert_eq!(snapshot.left_channel.rate_of_change, 0.7); // 0.8 - 0.1
+        assert_eq!(snapshot.right_channel.rate_of_change, 0.7); // 0.9 - 0.2
     }
 
     #[test]
@@ -527,8 +527,8 @@ mod tests {
 
         assert_eq!(telemetry.snapshots.len(), 2);
         // Should contain the last 2 snapshots (indices 1 and 2)
-        assert_eq!(telemetry.snapshots[0].left_slew.output_level, 0.1);
-        assert_eq!(telemetry.snapshots[1].left_slew.output_level, 0.2);
+        assert_eq!(telemetry.snapshots[0].left_channel.output_level, 0.1);
+        assert_eq!(telemetry.snapshots[1].left_channel.output_level, 0.2);
     }
 
     #[test]
