@@ -183,16 +183,23 @@ impl AudioEngine {
     }
 
     fn play_aiff(&mut self, path: &Path) -> Result<(), Box<dyn Error>> {
-        // Parse AIFF file and extract audio data, cache it for fast seeking
+        // Load full AIFF file for best seek performance and seamless playback
+        log::info!("Loading AIFF file: {}", path.display());
         let aiff_data = crate::media::metadata::read_aiff_data(path)?;
+
+        log::info!(
+            "AIFF loaded: {} total samples",
+            aiff_data.audio_samples.len()
+        );
+
         let source = AiffSource::from_data(
             aiff_data.clone(),
             self.samples_tx.clone(),
             self.samples_played.clone(),
         )?;
 
-        // Cache the data for fast seeking
-        self.cached_aiff_data = Some(aiff_data);
+        // Cache the full data for fast seeking
+        self.cached_aiff_data = Some(aiff_data.clone());
 
         self.info = Some(AudioInfo {
             sample_rate: source.sample_rate(),
@@ -208,9 +215,10 @@ impl AudioEngine {
 
         let calculated_duration = source.total_duration();
         log::info!(
-            "AIFF loaded: {} Hz, {} channels, {} samples, calculated duration: {:?}",
+            "AIFF loaded: {} Hz, {} channels, {} samples loaded (of {} total), calculated duration: {:?}",
             source.sample_rate(),
             source.channels(),
+            aiff_data.audio_samples.len(),
             source.total_samples(),
             calculated_duration
         );
@@ -326,7 +334,7 @@ impl AudioEngine {
         _path: &Path,
         start_sample: usize,
     ) -> Result<(), Box<dyn Error>> {
-        // Use cached AIFF data for fast seeking instead of reloading from disk
+        // Use cached AIFF data for fast seeking
         if let Some(aiff_data) = &self.cached_aiff_data {
             let mut source = AiffSource::from_data(
                 aiff_data.clone(),
