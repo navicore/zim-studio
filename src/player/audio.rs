@@ -175,6 +175,36 @@ impl AudioEngine {
         Ok(())
     }
 
+    #[allow(dead_code)]
+    fn play_aiff(&mut self, path: &Path) -> Result<(), Box<dyn Error>> {
+        // Parse AIFF file and extract audio data
+        let source = AiffSource::new(path, self.samples_tx.clone(), self.samples_played.clone())?;
+
+        self.info = Some(AudioInfo {
+            sample_rate: source.sample_rate(),
+            channels: source.channels(),
+        });
+
+        // Store the file path for seeking
+        self.current_file_path = Some(path.to_string_lossy().to_string());
+
+        // Set duration and total samples from our parser
+        self.duration = source.total_duration();
+        self.total_samples = source.total_samples();
+
+        log::info!(
+            "AIFF loaded: {} Hz, {} channels, {} samples",
+            source.sample_rate(),
+            source.channels(),
+            source.total_samples()
+        );
+
+        // Play through rodio
+        self.sink.append(source);
+
+        Ok(())
+    }
+
     pub fn play(&self) {
         self.sink.play();
     }
@@ -263,6 +293,27 @@ impl AudioEngine {
         self.sink.append(source);
 
         log::info!("Playing FLAC from sample: {start_sample}");
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn play_aiff_from_position(
+        &mut self,
+        path: &Path,
+        start_sample: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        // Parse AIFF file and extract audio data
+        let mut source =
+            AiffSource::new(path, self.samples_tx.clone(), self.samples_played.clone())?;
+
+        // Skip to the start position
+        source.skip_to(start_sample);
+
+        // Play through rodio
+        self.sink.append(source);
+
+        log::info!("Playing AIFF from sample: {start_sample}");
 
         Ok(())
     }
@@ -511,6 +562,106 @@ impl Source for FlacSource {
 
     fn channels(&self) -> u16 {
         self.channels as u16
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        let total_samples = self.current_samples.len() as u64;
+        let duration_secs = total_samples as f64 / (self.sample_rate as f64 * self.channels as f64);
+        Some(Duration::from_secs_f64(duration_secs))
+    }
+}
+
+// AIFF source with monitoring
+#[allow(dead_code)]
+struct AiffSource {
+    samples_tx: mpsc::Sender<Vec<f32>>,
+    sample_rate: u32,
+    channels: u16,
+    bits_per_sample: u16,
+    current_samples: Vec<i32>,
+    position: usize,
+    monitor_buffer: Vec<f32>,
+    samples_played: Arc<AtomicUsize>,
+}
+
+#[allow(dead_code)]
+impl AiffSource {
+    fn new(
+        path: &Path,
+        samples_tx: mpsc::Sender<Vec<f32>>,
+        samples_played: Arc<AtomicUsize>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let aiff_data = crate::media::metadata::read_aiff_data(path)?;
+
+        Ok(Self {
+            samples_tx,
+            sample_rate: aiff_data.sample_rate,
+            channels: aiff_data.channels,
+            bits_per_sample: aiff_data.bits_per_sample,
+            current_samples: aiff_data.audio_samples,
+            position: 0,
+            monitor_buffer: Vec::new(),
+            samples_played,
+        })
+    }
+
+    fn skip_to(&mut self, sample_index: usize) {
+        self.position = sample_index.min(self.current_samples.len());
+    }
+
+    fn total_samples(&self) -> usize {
+        self.current_samples.len()
+    }
+}
+
+impl Iterator for AiffSource {
+    type Item = i16;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.position >= self.current_samples.len() {
+            return None;
+        }
+
+        let sample = self.current_samples[self.position];
+        self.position += 1;
+
+        // Update samples played counter
+        let _count = self.samples_played.fetch_add(1, Ordering::Relaxed);
+
+        // Convert to i16 based on bit depth
+        let sample_i16 = match self.bits_per_sample {
+            16 => sample as i16,
+            24 => (sample >> 8) as i16,  // Shift 24-bit to 16-bit
+            32 => (sample >> 16) as i16, // Shift 32-bit to 16-bit
+            8 => (sample << 8) as i16,   // Shift 8-bit to 16-bit
+            _ => sample as i16,
+        };
+
+        // Convert to f32 for visualization
+        let normalized = sample as f32 / (1 << (self.bits_per_sample - 1)) as f32;
+        self.monitor_buffer.push(normalized);
+
+        // Send samples in chunks of 1024 for visualization
+        if self.monitor_buffer.len() >= 1024 {
+            let _ = self.samples_tx.send(self.monitor_buffer.clone());
+            self.monitor_buffer.clear();
+        }
+
+        Some(sample_i16)
+    }
+}
+
+impl rodio::Source for AiffSource {
+    fn current_frame_len(&self) -> Option<usize> {
+        None
+    }
+
+    fn channels(&self) -> u16 {
+        self.channels
     }
 
     fn sample_rate(&self) -> u32 {

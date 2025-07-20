@@ -1333,6 +1333,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_json"
+version = "1.0.141"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30b9eff21ebe718216c6ec64e1d9ac57087aad11efc64e32002bce4a0d4c03d3"
+dependencies = [
+ "itoa",
+ "memchr",
+ "ryu",
+ "serde",
+]
+
+[[package]]
 name = "serde_spanned"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2235,6 +2247,7 @@ dependencies = [
  "ratatui",
  "rodio",
  "serde",
+ "serde_json",
  "serde_yaml",
  "shellexpand",
  "simplelog",
