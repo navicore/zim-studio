@@ -117,8 +117,8 @@ impl App {
     pub fn enable_debug_telemetry(&mut self) {
         let config = TelemetryConfig {
             enabled: true,
-            debug_slew_gates: true,
-            debug_vc_control: true,
+            debug_audio_levels: true,
+            debug_format_info: true,
             capture_interval_ms: 100, // 10Hz for debugging
             output_format: "log".to_string(),
             ..Default::default()

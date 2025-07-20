@@ -34,6 +34,7 @@ pub struct AudioEngine {
     samples_played: Arc<AtomicUsize>,
     total_samples: usize,
     current_file_path: Option<String>,
+    cached_aiff_data: Option<crate::media::metadata::AiffData>,
 }
 
 impl AudioEngine {
@@ -54,6 +55,7 @@ impl AudioEngine {
                 samples_played: Arc::new(AtomicUsize::new(0)),
                 total_samples: 0,
                 current_file_path: None,
+                cached_aiff_data: None,
             },
             samples_rx,
         ))
@@ -91,6 +93,9 @@ impl AudioEngine {
             }
             "flac" => {
                 self.play_flac(path)?;
+            }
+            "aif" | "aiff" => {
+                self.play_aiff(path)?;
             }
             _ => return Err(format!("Unsupported audio format: {ext}").into()),
         }
@@ -177,10 +182,24 @@ impl AudioEngine {
         Ok(())
     }
 
-    #[allow(dead_code)]
     fn play_aiff(&mut self, path: &Path) -> Result<(), Box<dyn Error>> {
-        // Parse AIFF file and extract audio data
-        let source = AiffSource::new(path, self.samples_tx.clone(), self.samples_played.clone())?;
+        // Load full AIFF file for best seek performance and seamless playback
+        log::info!("Loading AIFF file: {}", path.display());
+        let aiff_data = crate::media::metadata::read_aiff_data(path)?;
+
+        log::info!(
+            "AIFF loaded: {} total samples",
+            aiff_data.audio_samples.len()
+        );
+
+        let source = AiffSource::from_data(
+            aiff_data.clone(),
+            self.samples_tx.clone(),
+            self.samples_played.clone(),
+        )?;
+
+        // Cache the full data for fast seeking
+        self.cached_aiff_data = Some(aiff_data.clone());
 
         self.info = Some(AudioInfo {
             sample_rate: source.sample_rate(),
@@ -194,12 +213,20 @@ impl AudioEngine {
         self.duration = source.total_duration();
         self.total_samples = source.total_samples();
 
+        let calculated_duration = source.total_duration();
         log::info!(
-            "AIFF loaded: {} Hz, {} channels, {} samples",
+            "AIFF loaded: {} Hz, {} channels, {} samples loaded (of {} total), calculated duration: {:?}",
             source.sample_rate(),
             source.channels(),
-            source.total_samples()
+            aiff_data.audio_samples.len(),
+            source.total_samples(),
+            calculated_duration
         );
+
+        // Log duration in seconds for easy comparison with QuickTime
+        if let Some(duration) = calculated_duration {
+            log::info!("AIFF duration: {:.2} seconds", duration.as_secs_f64());
+        }
 
         // Play through rodio
         self.sink.append(source);
@@ -248,6 +275,9 @@ impl AudioEngine {
             }
             "flac" => {
                 self.play_flac_from_position(path, start_sample)?;
+            }
+            "aif" | "aiff" => {
+                self.play_aiff_from_position(path, start_sample)?;
             }
             _ => return Err(format!("Unsupported audio format: {ext}").into()),
         }
@@ -299,25 +329,30 @@ impl AudioEngine {
         Ok(())
     }
 
-    #[allow(dead_code)]
     fn play_aiff_from_position(
         &mut self,
-        path: &Path,
+        _path: &Path,
         start_sample: usize,
     ) -> Result<(), Box<dyn Error>> {
-        // Parse AIFF file and extract audio data
-        let mut source =
-            AiffSource::new(path, self.samples_tx.clone(), self.samples_played.clone())?;
+        // Use cached AIFF data for fast seeking
+        if let Some(aiff_data) = &self.cached_aiff_data {
+            let mut source = AiffSource::from_data(
+                aiff_data.clone(),
+                self.samples_tx.clone(),
+                self.samples_played.clone(),
+            )?;
 
-        // Skip to the start position
-        source.skip_to(start_sample);
+            // Skip to the start position
+            source.skip_to(start_sample);
 
-        // Play through rodio
-        self.sink.append(source);
+            // Play through rodio
+            self.sink.append(source);
 
-        log::info!("Playing AIFF from sample: {start_sample}");
-
-        Ok(())
+            log::info!("Playing AIFF from sample: {start_sample}");
+            Ok(())
+        } else {
+            Err("No cached AIFF data available for seeking".into())
+        }
     }
 
     pub fn seek_relative(&mut self, seconds: f32) -> Result<(), Box<dyn Error>> {
@@ -578,7 +613,6 @@ impl Source for FlacSource {
 }
 
 // AIFF source with monitoring
-#[allow(dead_code)]
 struct AiffSource {
     samples_tx: mpsc::Sender<Vec<f32>>,
     sample_rate: u32,
@@ -590,15 +624,22 @@ struct AiffSource {
     samples_played: Arc<AtomicUsize>,
 }
 
-#[allow(dead_code)]
 impl AiffSource {
+    #[allow(dead_code)]
     fn new(
         path: &Path,
         samples_tx: mpsc::Sender<Vec<f32>>,
         samples_played: Arc<AtomicUsize>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let aiff_data = crate::media::metadata::read_aiff_data(path)?;
+        Self::from_data(aiff_data, samples_tx, samples_played)
+    }
 
+    fn from_data(
+        aiff_data: crate::media::metadata::AiffData,
+        samples_tx: mpsc::Sender<Vec<f32>>,
+        samples_played: Arc<AtomicUsize>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
             samples_tx,
             sample_rate: aiff_data.sample_rate,
