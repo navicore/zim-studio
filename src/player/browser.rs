@@ -68,8 +68,8 @@ impl Browser {
         self.items
             .sort_by(|a, b| a.audio_path.file_name().cmp(&b.audio_path.file_name()));
 
-        // Initially show all items with no context
-        self.filtered_items = self.items.iter().map(|item| (item.clone(), None)).collect();
+        // Apply current search filter (preserves existing search)
+        self.filter_items();
 
         Ok(())
     }
