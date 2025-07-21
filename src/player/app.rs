@@ -826,6 +826,9 @@ fn handle_integrated_browser_keys(
     match app.browser.focus {
         BrowserFocus::Search => match key.code {
             KeyCode::Backspace => app.browser.pop_char(),
+            KeyCode::Char('c' | 'k') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                app.browser.clear_search(); // Ctrl+C or Ctrl+K to clear search
+            }
             KeyCode::Char(c) => app.browser.push_char(c),
             _ => {}
         },
@@ -957,8 +960,7 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
         KeyCode::Char('/') => {
             app.view_mode = ViewMode::Browser;
             app.browser.focus = super::browser::BrowserFocus::Search;
-            app.browser.clear_search();
-            // Initialize browser with current directory
+            // Initialize browser with current directory (preserves existing search)
             app.browser.scan_directory(std::path::Path::new("."))?;
         }
         KeyCode::Left => seek_audio(app, -5.0),
