@@ -11,7 +11,7 @@ ZIM Studio provides three main functions:
   2. **Metadata System**: Generate searchable sidecar files for all audio media with YAML frontmatter
   3. **Audio Player**: Professional sample browsing, auditioning, and editing with TUI interface
 
-## ✨ New in v1.0.0
+## ✨ More...
 
 - **Enhanced Navigation**: Shift+Arrow keys for 20% jumps through long recordings
 - **Smart Sidecar Cloning**: When saving selections, automatically clones source metadata with:
