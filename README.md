@@ -2,7 +2,7 @@
 [![CI](https://github.com/navicore/zim-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci.yml)
 [![Release with Auto Version (PAT)](https://github.com/navicore/zim-studio/actions/workflows/release.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/release.yml)
 
-# ZIM Studio v1.0.0 - Terminal-Based Audio Studio Tools
+# ZIM Studio - Terminal-Based Audio Studio Tools
 
 *A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music with Integrated Audio Player*
 
@@ -13,13 +13,10 @@ ZIM Studio provides three main functions:
 
 ## ✨ New in v1.0.0
 
-- **AIFF Support**: Full support for AIFF audio files with proper sample rate parsing
 - **Enhanced Navigation**: Shift+Arrow keys for 20% jumps through long recordings
 - **Smart Sidecar Cloning**: When saving selections, automatically clones source metadata with:
   - Updated duration for the extracted selection
-  - ISO 8601 timestamps for extraction time
   - Provenance tracking (source file, time ranges)
-  - Graceful handling of missing source sidecars
 
 The sidecar format is YAML embedded in markdown, providing both structured metadata 
 and free-form notes. The YAML contains facts about the track while the markdown 
