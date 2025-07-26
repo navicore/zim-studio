@@ -465,12 +465,162 @@ impl App {
             .map(|e| e.to_lowercase())
             .unwrap_or_default();
 
-        // Always save as WAV for now
-        match source_ext.as_str() {
-            "wav" => self.save_wav_selection(source_path, dest_path, mark_in, mark_out),
-            "flac" => self.save_flac_to_wav_selection(source_path, dest_path, mark_in, mark_out),
+        // Save the audio selection first
+        let audio_result = match source_ext.as_str() {
+            "wav" => self.save_wav_selection(source_path, dest_path.clone(), mark_in, mark_out),
+            "flac" => {
+                self.save_flac_to_wav_selection(source_path, dest_path.clone(), mark_in, mark_out)
+            }
             _ => Err(format!("Unsupported source format: {source_ext}").into()),
+        };
+
+        // If audio save succeeded, try to clone and modify the sidecar file
+        if audio_result.is_ok() {
+            if let Err(e) =
+                self.clone_sidecar_for_selection(source_path, &dest_path, mark_in, mark_out)
+            {
+                log::warn!("Failed to create sidecar file: {e}");
+                // Don't fail the entire operation if sidecar creation fails
+            }
         }
+
+        audio_result
+    }
+
+    fn clone_sidecar_for_selection(
+        &self,
+        source_path: &str,
+        dest_path: &std::path::Path,
+        mark_in: f32,
+        mark_out: f32,
+    ) -> Result<(), Box<dyn Error>> {
+        use std::fs;
+        use std::path::PathBuf;
+
+        // Construct source sidecar path (source_file.ext.md)
+        let mut source_sidecar = PathBuf::from(source_path);
+        source_sidecar.as_mut_os_string().push(".md");
+
+        // Construct destination sidecar path (dest_file.ext.md)
+        let mut dest_sidecar = dest_path.to_path_buf();
+        dest_sidecar.as_mut_os_string().push(".md");
+
+        // Calculate time ranges for documentation
+        let duration_seconds = if let Some(duration) = self.duration {
+            duration.as_secs_f32()
+        } else {
+            0.0
+        };
+
+        let start_time = (mark_in * duration_seconds) as u32;
+        let end_time = (mark_out * duration_seconds) as u32;
+        let selection_duration = end_time - start_time;
+
+        let start_mins = start_time / 60;
+        let start_secs = start_time % 60;
+        let end_mins = end_time / 60;
+        let end_secs = end_time % 60;
+        let sel_mins = selection_duration / 60;
+        let sel_secs = selection_duration % 60;
+        let selection_duration_f32 = selection_duration as f32;
+
+        // Simple ISO 8601 timestamp (approximate, good enough for this use case)
+        let timestamp = {
+            use std::process::Command;
+
+            // Use system `date` command for proper ISO 8601 formatting
+            if let Ok(output) = Command::new("date")
+                .arg("-u")
+                .arg("+%Y-%m-%dT%H:%M:%SZ")
+                .output()
+            {
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
+            } else {
+                // Fallback to basic format if date command fails
+                let secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                format!("unix-{secs}")
+            }
+        };
+
+        let content = if source_sidecar.exists() {
+            // Clone existing sidecar and add provenance fields to YAML frontmatter
+            let original_content = fs::read_to_string(&source_sidecar)?;
+
+            if let Some(frontmatter_end) = original_content.find("\n---\n") {
+                // Has YAML frontmatter - update duration and insert our fields
+                let yaml_section = &original_content[..frontmatter_end];
+                let markdown_section = &original_content[frontmatter_end + 5..]; // Skip "\n---\n"
+
+                // Update duration field if it exists, otherwise add it
+                let updated_yaml = if let Some(duration_start) = yaml_section.find("duration:") {
+                    // Find the end of the duration line
+                    let after_duration = &yaml_section[duration_start..];
+                    let duration_end = after_duration.find('\n').unwrap_or(after_duration.len());
+
+                    // Replace the duration line
+                    let before = &yaml_section[..duration_start];
+                    let after = &yaml_section[duration_start + duration_end..];
+                    format!("{before}duration: {selection_duration_f32:.2}{after}")
+                } else {
+                    // Add duration field
+                    format!("{yaml_section}\nduration: {selection_duration_f32:.2}")
+                };
+
+                format!(
+                    "{updated_yaml}\nsource_file: \"{source_path}\"\nsource_time_start: {start_mins}:{start_secs:02}\nsource_time_end: {end_mins}:{end_secs:02}\nsource_duration: {sel_mins}:{sel_secs:02}\nextracted_at: {timestamp}\nextraction_type: \"selection\"\n---\n{markdown_section}"
+                )
+            } else {
+                // No YAML frontmatter - add it
+                let dest_filename = dest_path
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("Unknown");
+
+                format!(
+                    "---\ntitle: \"{dest_filename}\"\nduration: {selection_duration_f32:.2}\nsource_file: \"{source_path}\"\nsource_time_start: {start_mins}:{start_secs:02}\nsource_time_end: {end_mins}:{end_secs:02}\nsource_duration: {sel_mins}:{sel_secs:02}\nextracted_at: {timestamp}\nextraction_type: \"selection\"\n---\n\n{}",
+                    original_content.trim()
+                )
+            }
+        } else {
+            // Create new sidecar with gentle reminder about missing source metadata
+            let dest_filename = dest_path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("Unknown");
+
+            format!(
+                r#"---
+title: "{dest_filename}"
+duration: {selection_duration_f32:.2}
+tags: ["excerpt"]
+source_file: "{source_path}"
+source_time_start: {start_mins}:{start_secs:02}
+source_time_end: {end_mins}:{end_secs:02}
+source_duration: {sel_mins}:{sel_secs:02}
+extracted_at: {timestamp}
+extraction_type: "selection"
+---
+
+# {dest_filename}
+
+**⚠️ Source file had no metadata**
+
+This audio excerpt was extracted from a source file that did not have an associated sidecar (.md) file. Consider adding metadata to your source files for better organization and searchability.
+
+## Notes
+
+Add your notes and tags here to document this excerpt.
+"#
+            )
+        };
+
+        fs::write(&dest_sidecar, content)?;
+        log::info!("Created sidecar file: {}", dest_sidecar.display());
+
+        Ok(())
     }
 
     fn save_wav_selection(
@@ -808,14 +958,22 @@ fn handle_integrated_browser_keys(
         KeyCode::Left => {
             // Seek backward (works regardless of focus)
             if app.current_file.is_some() {
-                seek_audio(app, -5.0);
+                if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                    seek_audio_percentage(app, -0.2); // Jump back 20%
+                } else {
+                    seek_audio(app, -5.0); // Normal 5-second seek
+                }
             }
             return Ok(());
         }
         KeyCode::Right => {
             // Seek forward (works regardless of focus)
             if app.current_file.is_some() {
-                seek_audio(app, 5.0);
+                if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                    seek_audio_percentage(app, 0.2); // Jump forward 20%
+                } else {
+                    seek_audio(app, 5.0); // Normal 5-second seek
+                }
             }
             return Ok(());
         }
@@ -847,13 +1005,21 @@ fn handle_integrated_browser_keys(
                 KeyCode::Char('h') => {
                     // Seek backward
                     if app.current_file.is_some() {
-                        seek_audio(app, -5.0);
+                        if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                            seek_audio_percentage(app, -0.2); // Jump back 20%
+                        } else {
+                            seek_audio(app, -5.0); // Normal 5-second seek
+                        }
                     }
                 }
                 KeyCode::Char('l') => {
                     // Seek forward
                     if app.current_file.is_some() {
-                        seek_audio(app, 5.0);
+                        if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                            seek_audio_percentage(app, 0.2); // Jump forward 20%
+                        } else {
+                            seek_audio(app, 5.0); // Normal 5-second seek
+                        }
                     }
                 }
                 KeyCode::Char(' ') => {
@@ -963,8 +1129,20 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
             // Initialize browser with current directory (preserves existing search)
             app.browser.scan_directory(std::path::Path::new("."))?;
         }
-        KeyCode::Left => seek_audio(app, -5.0),
-        KeyCode::Right => seek_audio(app, 5.0),
+        KeyCode::Left => {
+            if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                seek_audio_percentage(app, -0.2); // Jump back 20%
+            } else {
+                seek_audio(app, -5.0); // Normal 5-second seek
+            }
+        }
+        KeyCode::Right => {
+            if key.modifiers.contains(event::KeyModifiers::SHIFT) {
+                seek_audio_percentage(app, 0.2); // Jump forward 20%
+            } else {
+                seek_audio(app, 5.0); // Normal 5-second seek
+            }
+        }
         KeyCode::Char('[') | KeyCode::Char('i') => app.set_mark_in(),
         KeyCode::Char(']') | KeyCode::Char('o') => app.set_mark_out(),
         KeyCode::Char('x') => app.clear_marks(),
@@ -986,6 +1164,13 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
 
 fn seek_audio(app: &mut App, seconds: f32) {
     if let Some(engine) = &mut app.audio_engine {
+        let _ = engine.seek_relative(seconds);
+    }
+}
+
+fn seek_audio_percentage(app: &mut App, percentage: f32) {
+    if let (Some(engine), Some(duration)) = (&mut app.audio_engine, app.duration) {
+        let seconds = duration.as_secs_f32() * percentage;
         let _ = engine.seek_relative(seconds);
     }
 }
