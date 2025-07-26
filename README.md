@@ -2,14 +2,24 @@
 [![CI](https://github.com/navicore/zim-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci.yml)
 [![Release with Auto Version (PAT)](https://github.com/navicore/zim-studio/actions/workflows/release.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/release.yml)
 
-# ZIM - Terminal-Based Audio Studio Tools
+# ZIM Studio v1.0.0 - Terminal-Based Audio Studio Tools
 
 *A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music with Integrated Audio Player*
 
 ZIM Studio provides three main functions:
   1. **Project Management**: Initialize a project structure of directories and placeholder README.md files
-  2. **Metadata System**: Generate searchable sidecar files for all audio media
-  3. **Audio Player** (optional): Fast sample browsing, auditioning, and chopping with TUI interface
+  2. **Metadata System**: Generate searchable sidecar files for all audio media with YAML frontmatter
+  3. **Audio Player**: Professional sample browsing, auditioning, and editing with TUI interface
+
+## ✨ New in v1.0.0
+
+- **AIFF Support**: Full support for AIFF audio files with proper sample rate parsing
+- **Enhanced Navigation**: Shift+Arrow keys for 20% jumps through long recordings
+- **Smart Sidecar Cloning**: When saving selections, automatically clones source metadata with:
+  - Updated duration for the extracted selection
+  - ISO 8601 timestamps for extraction time
+  - Provenance tracking (source file, time ranges)
+  - Graceful handling of missing source sidecars
 
 The sidecar format is YAML embedded in markdown, providing both structured metadata 
 and free-form notes. The YAML contains facts about the track while the markdown 
@@ -159,6 +169,8 @@ The player interface consists of:
 - `[space]` - Play/Pause toggle
 - `[←]` - Seek backward 5 seconds  
 - `[→]` - Seek forward 5 seconds
+- `[Shift+←]` - Jump backward 20% (great for long recordings)
+- `[Shift+→]` - Jump forward 20% (great for long recordings)
 
 #### Mark & Loop Controls
 - `[i]` - Set mark in at current position
@@ -226,14 +238,17 @@ The stereo LED indicators show real-time audio levels:
 ### Supported Formats
 
 - **WAV**: 8, 16, 24, and 32-bit
-- **FLAC**: All bit depths (converted to 16-bit WAV when saving selections)
+- **FLAC**: All bit depths (converted to 16-bit WAV when saving selections)  
+- **AIFF**: All bit depths with intelligent sample rate detection
 
 ### Tips & Workflow
 
 1. **Quick Sample Chopping**: Load file → mark in/out → save = done
 2. **Preview Before Save**: Use `[l]` to loop your selection before saving
 3. **Rapid Browsing**: The browser remembers your search, making it fast to audition similar samples
-4. **No Mouse Needed**: Everything is keyboard-driven for speed
+4. **Long Recording Navigation**: Use Shift+Arrow for 20% jumps to quickly navigate through long recordings
+5. **Metadata Preservation**: When saving selections, source metadata is automatically cloned with updated duration and provenance tracking
+6. **No Mouse Needed**: Everything is keyboard-driven for speed
 
 ### Troubleshooting
 
