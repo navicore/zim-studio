@@ -57,6 +57,12 @@ pub fn create_gitignore(project_path: &Path, patterns: &[String]) -> Result<(), 
     Ok(())
 }
 
+pub fn create_zimignore(project_path: &Path, content: &str) -> Result<(), Box<dyn Error>> {
+    let zimignore_path = project_path.join(".zimignore");
+    fs::write(zimignore_path, content)?;
+    Ok(())
+}
+
 pub fn create_project_metadata(
     project_path: &Path,
     project_name: &str,
