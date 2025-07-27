@@ -60,6 +60,15 @@ enum Commands {
         /// Parent directory for the project (defaults to current directory)
         #[arg(short, long)]
         path: Option<String>,
+        /// Custom .zimignore template file to use
+        #[arg(long)]
+        zimignore_template: Option<String>,
+        /// Skip creating .zimignore file
+        #[arg(long)]
+        no_zimignore: bool,
+        /// Interactively customize the .zimignore content
+        #[arg(short, long)]
+        interactive: bool,
     },
     /// Update sidecar metadata files for media assets
     Update {
@@ -130,8 +139,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut cmd = Cli::command();
             print_completions(shell, &mut cmd);
         }
-        Commands::New { name, path } => {
-            cli::new::handle_new(name.as_deref(), path.as_deref())?;
+        Commands::New {
+            name,
+            path,
+            zimignore_template,
+            no_zimignore,
+            interactive,
+        } => {
+            cli::new::handle_new(
+                name.as_deref(),
+                path.as_deref(),
+                zimignore_template.as_deref(),
+                no_zimignore,
+                interactive,
+            )?;
         }
         Commands::Update { path } => {
             cli::update::handle_update(&path)?;

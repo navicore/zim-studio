@@ -29,6 +29,9 @@ pub fn handle_init() -> Result<(), Box<dyn Error>> {
     let config: Config = Default::default();
     config.save()?;
 
+    // Also create the default .zimignore template
+    Config::ensure_default_zimignore()?;
+
     thread::sleep(Duration::from_millis(200));
     spinner.finish_and_clear();
 
@@ -41,6 +44,14 @@ pub fn handle_init() -> Result<(), Box<dyn Error>> {
         "  {} {}",
         "Configuration:".bright_black(),
         Config::config_path()?.display().to_string().cyan()
+    );
+    println!(
+        "  {} {}",
+        "Default .zimignore:".bright_black(),
+        Config::default_zimignore_path()?
+            .display()
+            .to_string()
+            .cyan()
     );
     println!();
     println!("{}", "Default configuration created:".yellow().bold());

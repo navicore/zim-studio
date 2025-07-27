@@ -102,6 +102,53 @@ fn default_daw_folders() -> Vec<String> {
     ]
 }
 
+fn default_zimignore_content() -> String {
+    r#"# ZIM Studio Default .zimignore
+# 
+# This file defines patterns for files and directories that should be ignored
+# when running "zim update" to generate sidecar files. The syntax is similar
+# to .gitignore with support for glob patterns.
+
+# DAW Project Files and Directories
+project/live/
+project/reaper/
+project/bitwig/
+project/renoise/
+
+# DAW-specific temporary and backup files
+*.als-backup
+*.rpp-bak
+*.bwproject-backup
+*.xrns-backup
+
+# Common DAW auto-save and backup directories
+**/Backup/
+**/Auto Save/
+**/AutoSave/
+**/Ableton Project Info/
+
+# Cache and temporary directories
+**/.cache/
+**/temp/
+**/tmp/
+**/.tmp/
+
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Log files
+*.log
+
+# Example: Keep important files even if they match patterns above
+# Use ! to negate patterns
+# !important.als
+# !project/live/important-session.als
+"#
+    .to_string()
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self::new()
@@ -136,6 +183,10 @@ impl Config {
         Ok(Self::config_dir()?.join("config.toml"))
     }
 
+    pub fn default_zimignore_path() -> Result<PathBuf, Box<dyn Error>> {
+        Ok(Self::config_dir()?.join("default.zimignore"))
+    }
+
     pub fn load() -> Result<Self, Box<dyn Error>> {
         let config_path = Self::config_path()?;
 
@@ -165,6 +216,34 @@ impl Config {
 
     pub fn exists() -> Result<bool, Box<dyn Error>> {
         Ok(Self::config_path()?.exists())
+    }
+
+    /// Create the default .zimignore template if it doesn't exist
+    pub fn ensure_default_zimignore() -> Result<(), Box<dyn Error>> {
+        let zimignore_path = Self::default_zimignore_path()?;
+
+        if !zimignore_path.exists() {
+            let config_dir = Self::config_dir()?;
+            if !config_dir.exists() {
+                fs::create_dir_all(&config_dir)?;
+            }
+
+            let default_content = default_zimignore_content();
+            fs::write(&zimignore_path, default_content)?;
+        }
+
+        Ok(())
+    }
+
+    /// Load the default .zimignore template content
+    pub fn load_default_zimignore() -> Result<String, Box<dyn Error>> {
+        let zimignore_path = Self::default_zimignore_path()?;
+
+        if zimignore_path.exists() {
+            Ok(fs::read_to_string(&zimignore_path)?)
+        } else {
+            Ok(default_zimignore_content())
+        }
     }
 
     pub fn set_value(&mut self, key: &str, value: &str) -> Result<(), Box<dyn Error>> {

@@ -8,7 +8,13 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-pub fn handle_new(name: Option<&str>, path: Option<&str>) -> Result<(), Box<dyn Error>> {
+pub fn handle_new(
+    name: Option<&str>,
+    path: Option<&str>,
+    zimignore_template: Option<&str>,
+    no_zimignore: bool,
+    interactive: bool,
+) -> Result<(), Box<dyn Error>> {
     // Load configuration
     let config = Config::load()?;
 
@@ -103,6 +109,14 @@ pub fn handle_new(name: Option<&str>, path: Option<&str>) -> Result<(), Box<dyn 
         thread::sleep(Duration::from_millis(100));
     }
     pb.inc(1);
+
+    // Create .zimignore
+    if !no_zimignore {
+        pb.set_message("Creating .zimignore...");
+        let zimignore_content = get_zimignore_content(zimignore_template, interactive)?;
+        project::create_zimignore(&project_path, &zimignore_content)?;
+        thread::sleep(Duration::from_millis(100));
+    }
 
     // Create project metadata file
     pb.set_message("Creating project metadata...");
@@ -233,4 +247,46 @@ fn normalize_project_name(name: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("_")
+}
+
+fn get_zimignore_content(
+    template_path: Option<&str>,
+    interactive: bool,
+) -> Result<String, Box<dyn Error>> {
+    use std::fs;
+
+    let content = if let Some(template_path) = template_path {
+        // Use custom template file
+        fs::read_to_string(template_path)?
+    } else {
+        // Use default template
+        Config::load_default_zimignore()?
+    };
+
+    if interactive {
+        // Allow user to edit the content interactively
+        println!("\n{}", "Customize .zimignore content:".yellow().bold());
+        println!("{}", "(Leave empty to use default)".bright_black());
+
+        let custom_content = Input::<String>::with_theme(&ColorfulTheme::default())
+            .with_prompt("Additional patterns (comma-separated)")
+            .allow_empty(true)
+            .interact_text()?;
+
+        if !custom_content.trim().is_empty() {
+            let mut final_content = content;
+            final_content.push_str("\n# Custom patterns for this project\n");
+            for pattern in custom_content.split(',') {
+                let pattern = pattern.trim();
+                if !pattern.is_empty() {
+                    final_content.push_str(&format!("{pattern}\n"));
+                }
+            }
+            Ok(final_content)
+        } else {
+            Ok(content)
+        }
+    } else {
+        Ok(content)
+    }
 }
