@@ -8,7 +8,8 @@
 
 _Implemented in [Rust](https://www.rust-lang.org) and [Ratatui](https://ratatui.rs) with optional [nvim plugin](https://github.com/navicore/zim-studio-nvim) support._
 
-![IMAGE: Screenshot of browser interface](docs/nvim_prev.png) ![IMAGE: Screenshot of main player interface](docs/nvim_play.png)
+![IMAGE: Screenshot of browser interface](docs/nvim_prev.png) 
+![IMAGE: Screenshot of main player interface](docs/nvim_play.png)
 
 ZIM Studio provides three main functions:
   1. **Project Management**: Initialize a project structure of directories and placeholder README.md files
