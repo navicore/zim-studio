@@ -8,6 +8,8 @@
 
 _Implemented in [Rust](https://www.rust-lang.org) and [Ratatui](https://ratatui.rs) with optional [nvim plugin](https://github.com/navicore/zim-studio-nvim) support._
 
+![IMAGE: Screenshot of main player interface run from nvim oil](docs/nvim_zim.png)
+
 ZIM Studio provides three main functions:
   1. **Project Management**: Initialize a project structure of directories and placeholder README.md files
   2. **Metadata System**: Generate searchable sidecar files for all audio media
