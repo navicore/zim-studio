@@ -628,11 +628,26 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
     f.render_widget(file_list, chunks[0]);
 
     // Preview
+    // Calculate how much text we can actually display in the preview area
+    // Account for borders (2 lines) and wrapping
+    let preview_area = chunks[1];
+    let usable_width = preview_area.width.saturating_sub(2) as usize; // Subtract border width
+    let usable_height = preview_area.height.saturating_sub(2) as usize; // Subtract border height
+    let max_chars = usable_width * usable_height; // Maximum characters that can fit
+
     let preview_content =
         if let Some((item, context)) = browser.filtered_items.get(browser.selected) {
             context.clone().unwrap_or_else(|| {
                 if !item.metadata.content.is_empty() {
-                    item.metadata.content.chars().take(200).collect::<String>() + "..."
+                    // Use a reasonable default (2000 chars) or the calculated max, whichever is smaller
+                    // This prevents showing too much text on very large terminals
+                    let limit = max_chars.min(2000);
+                    let content: String = item.metadata.content.chars().take(limit).collect();
+                    if item.metadata.content.len() > limit {
+                        content + "..."
+                    } else {
+                        content
+                    }
                 } else {
                     "No preview available".to_string()
                 }
