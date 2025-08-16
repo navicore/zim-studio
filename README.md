@@ -2,9 +2,9 @@
 [![CI](https://github.com/navicore/zim-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci.yml)
 [![Release with Auto Version (PAT)](https://github.com/navicore/zim-studio/actions/workflows/release.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/release.yml)
 
-# ZIM Studio - Terminal-Based Audio Studio Tools
+# ZIM Studio - Terminal-Based Audio Tools
 
-*A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music with Integrated Audio Player*
+*A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music Production with Integrated Audio Player*
 
 _Implemented in [Rust](https://www.rust-lang.org) and [Ratatui](https://ratatui.rs) with optional [nvim plugin](https://github.com/navicore/zim-studio-nvim) support._
 
