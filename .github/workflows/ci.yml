@@ -48,4 +48,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - run: cargo clippy --all-features -- -D warnings -D clippy::uninlined-format-args
+      - run: cargo clippy --all-features -- -D warnings -D clippy::all -D clippy::uninlined-format-args
