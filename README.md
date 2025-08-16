@@ -6,20 +6,23 @@
 
 *A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music with Integrated Audio Player*
 
+_Implemented in [Rust](https://www.rust-lang.org) and [Ratatui](https://ratatui.rs)._
+
 ZIM Studio provides three main functions:
   1. **Project Management**: Initialize a project structure of directories and placeholder README.md files
-  2. **Metadata System**: Generate searchable sidecar files for all audio media with YAML frontmatter
-  3. **Audio Player**: Professional sample browsing, auditioning, and editing with TUI interface
+  2. **Metadata System**: Generate searchable sidecar files for all audio media
+  3. **Audio Player**: Sample browsing, auditioning, and editing with TUI interface
 
 ## ✨ More...
 
+- **Supported Audio Formats**: `*.flac` and `*.wav` (so far)
 - **Enhanced Navigation**: Shift+Arrow keys for 20% jumps through long recordings
 - **Smart Sidecar Cloning**: When saving selections, automatically clones source metadata with:
   - Updated duration for the extracted selection
   - Provenance tracking (source file, time ranges)
 
-The sidecar format is YAML embedded in markdown, providing both structured metadata 
-and free-form notes. The YAML contains facts about the track while the markdown 
+The sidecar format is YAML embedded in markdown, providing both structured metadata
+and free-form notes. The YAML contains facts about the track while the markdown
 enables long-form notes, links to inspiration, TODO checklists, etc.
 
 See [example sidecar file](examples/sidecar-example.md) for a complete example.
@@ -28,12 +31,11 @@ The motivation for creating `zim` is twofold:
 
   1. Maintain a workflow where DAWs are guests in my workflow rather than the
      other way around.
-  2. I use [neovim](https://neovim.io/) and
-     [telescope](https://github.com/nvim-telescope/telescope.nvim) for my
+  2. I use [neovim](https://neovim.io/) and [telescope](https://github.com/nvim-telescope/telescope.nvim) for my
      personal note taking and rely on no proprietary company to enable my
      ability to work in software ... I wanted the same detailed note taking
-     independent of any vendor for my music making.  I use DAWs but am not ok
-     living in DAWs or any vendor's closed system.
+     independent of any vendor for my music making.  I use proprietary DAWs but
+     am not ok living in DAWs or any vendor's closed system.
 
 ## Installation
 
@@ -44,6 +46,9 @@ cargo install zim-studio
 # Install with the audio player feature included
 cargo install zim-studio --features player
 ```
+
+If you use neovim (untested with regular vim) you may want to try the
+[nvim plugin](https://github.com/navicore/zim-studio-nvim).
 
 ## Quick Start
 
@@ -164,7 +169,7 @@ The player interface consists of:
 
 #### Playback Controls
 - `[space]` - Play/Pause toggle
-- `[←]` - Seek backward 5 seconds  
+- `[←]` - Seek backward 5 seconds
 - `[→]` - Seek forward 5 seconds
 - `[Shift+←]` - Jump backward 20% (great for long recordings)
 - `[Shift+→]` - Jump forward 20% (great for long recordings)
@@ -215,7 +220,7 @@ When saving (`[s]`), the save dialog provides:
 - **Directory Browser**: Navigate folders with `[↑/↓]` and `[Enter]`
 - **Filename Field**: Editable with smart naming for edits
 - **Tab Navigation**: Use `[Tab]` to switch between directory list and filename
-- **Smart Extensions**: 
+- **Smart Extensions**:
   - Selections always save as `.wav` (even from FLAC sources)
   - Full file saves preserve original format
 
@@ -235,7 +240,7 @@ The stereo LED indicators show real-time audio levels:
 ### Supported Formats
 
 - **WAV**: 8, 16, 24, and 32-bit
-- **FLAC**: All bit depths (converted to 16-bit WAV when saving selections)  
+- **FLAC**: All bit depths (converted to 16-bit WAV when saving selections)
 - **AIFF**: All bit depths with intelligent sample rate detection
 
 ### Tips & Workflow
