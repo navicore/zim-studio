@@ -1,5 +1,0 @@
-[toolchain]
-channel = "stable"
-components = ["rustfmt", "clippy"]
-# Optionally pin to a specific version for absolute consistency
-# channel = "1.78.0"
