@@ -1,0 +1,15 @@
+# ZIM Studio ignore patterns
+# This file controls which files are ignored during zim operations
+
+# Ignore DAW project files and their collected samples
+project/live/**
+project/bitwig/**
+project/reaper/**
+project/renoise/**
+
+# Ignore Live's analysis files
+*.asd
+
+# Ignore system files
+.DS_Store
+Icon?
