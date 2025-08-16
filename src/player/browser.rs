@@ -9,6 +9,7 @@
 use log::warn;
 use std::fs;
 use std::path::{Path, PathBuf};
+use zim_studio::zimignore::ZimIgnore;
 
 const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &["wav", "flac"];
 const DEFAULT_CONTEXT_SIZE: usize = 80;
@@ -45,6 +46,7 @@ pub struct Browser {
     pub selected: usize,
     pub search_query: String,
     pub focus: BrowserFocus,
+    zimignore: ZimIgnore,
 }
 
 impl Browser {
@@ -55,11 +57,15 @@ impl Browser {
             selected: 0,
             search_query: String::new(),
             focus: BrowserFocus::Search,
+            zimignore: ZimIgnore::new(),
         }
     }
 
     pub fn scan_directory(&mut self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         self.items.clear();
+
+        // Load .zimignore patterns for this directory
+        self.zimignore = ZimIgnore::load_for_directory(path);
 
         // Recursively find all audio files
         self.scan_directory_recursive(path)?;
@@ -88,15 +94,55 @@ impl Browser {
             let entry = entry?;
             let path = entry.path();
 
+            // Convert to relative path for zimignore checking
+            let relative_path = if let Ok(stripped) = path.strip_prefix(".") {
+                stripped
+            } else if let Ok(stripped) = path.strip_prefix("./") {
+                stripped
+            } else {
+                &path
+            };
+
             if path.is_dir() {
+                // Check if directory should be ignored
+                if self.zimignore.is_ignored(relative_path, true) {
+                    continue;
+                }
+
+                // Skip . and .. to avoid infinite recursion
+                if let Some(name) = path.file_name() {
+                    if let Some(name_str) = name.to_str() {
+                        if name_str == "." || name_str == ".." {
+                            continue;
+                        }
+                    }
+                }
                 // Recursively scan subdirectories
                 if let Err(e) = self.scan_directory_recursive(&path) {
                     warn!("Could not scan directory {path:?}: {e}");
                 }
-            } else if path.is_file() && is_supported_audio_file(&path) {
-                match self.create_audio_file(path.clone()) {
-                    Ok(audio_file) => self.items.push(audio_file),
-                    Err(e) => warn!("Could not create audio file for {path:?}: {e}"),
+            } else if path.is_file() {
+                // Check if file should be ignored
+                if self.zimignore.is_ignored(relative_path, false) {
+                    log::debug!("Ignoring file due to .zimignore: {path:?}");
+                    continue;
+                }
+                let is_audio = is_supported_audio_file(&path);
+                log::debug!("Checking file: {path:?}, is_audio: {is_audio}");
+
+                if is_audio {
+                    // Check if this file is already in items (shouldn't happen but let's be sure)
+                    if self.items.iter().any(|item| item.audio_path == path) {
+                        log::warn!("Duplicate file found, skipping: {path:?}");
+                        continue;
+                    }
+
+                    match self.create_audio_file(path.clone()) {
+                        Ok(audio_file) => {
+                            self.items.push(audio_file);
+                        }
+                        Err(e) => warn!("Could not create audio file for {path:?}: {e}"),
+                    }
                 }
             }
         }
