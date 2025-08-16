@@ -6,7 +6,7 @@
 
 *A [Zettelkasten](https://en.wikipedia.org/wiki/Zettelkasten) Information System for Music with Integrated Audio Player*
 
-_Implemented in [Rust](https://www.rust-lang.org) and [Ratatui](https://ratatui.rs)._
+_Implemented in [Rust](https://www.rust-lang.org) and [Ratatui](https://ratatui.rs) with optional [nvim plugin](https://github.com/navicore/zim-studio-nvim) support._
 
 ZIM Studio provides three main functions:
   1. **Project Management**: Initialize a project structure of directories and placeholder README.md files
