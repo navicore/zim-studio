@@ -241,7 +241,7 @@ The stereo LED indicators show real-time audio levels:
 
 - **WAV**: 8, 16, 24, and 32-bit
 - **FLAC**: All bit depths (converted to 16-bit WAV when saving selections)
-- **AIFF**: All bit depths with intelligent sample rate detection
+- ~~**AIFF**: All bit depths with intelligent sample rate detection~~ WIP
 
 ### Tips & Workflow
 
