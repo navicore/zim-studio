@@ -118,12 +118,12 @@ fn count_audio_files(
                 continue;
             }
             count += count_audio_files(&path, audio_exts, zimignore)?;
-        } else if path.is_file() {
-            if let Some(extension) = path.extension() {
-                let ext = extension.to_string_lossy().to_lowercase();
-                if audio_exts.contains(ext.as_str()) {
-                    count += 1;
-                }
+        } else if path.is_file()
+            && let Some(extension) = path.extension()
+        {
+            let ext = extension.to_string_lossy().to_lowercase();
+            if audio_exts.contains(ext.as_str()) {
+                count += 1;
             }
         }
     }
@@ -199,21 +199,20 @@ fn process_media_file(
 
         if let (Ok(audio_time), Ok(sidecar_time)) =
             (audio_metadata.modified(), sidecar_metadata.modified())
+            && audio_time > sidecar_time
         {
-            if audio_time > sidecar_time {
-                // Audio file is newer - offer to update
-                pb.suspend(|| -> Result<(), Box<dyn Error>> {
-                    if offer_metadata_update(file_path, &sidecar_path, updated)? {
-                        Ok(())
-                    } else {
-                        // User declined - touch the sidecar to update its timestamp
-                        touch_file(&sidecar_path)?;
-                        *skipped.lock().unwrap() += 1;
-                        Ok(())
-                    }
-                })?;
-                return Ok(());
-            }
+            // Audio file is newer - offer to update
+            pb.suspend(|| -> Result<(), Box<dyn Error>> {
+                if offer_metadata_update(file_path, &sidecar_path, updated)? {
+                    Ok(())
+                } else {
+                    // User declined - touch the sidecar to update its timestamp
+                    touch_file(&sidecar_path)?;
+                    *skipped.lock().unwrap() += 1;
+                    Ok(())
+                }
+            })?;
+            return Ok(());
         }
 
         *skipped.lock().unwrap() += 1;
@@ -417,27 +416,26 @@ fn offer_metadata_update(
     let mut changes = Vec::new();
 
     // Check file size
-    if let Some(old_size) = yaml_data.get("file_size").and_then(|v| v.as_u64()) {
-        if old_size != new_file_size {
-            changes.push(format!(
-                "  file_size: {} → {}",
-                old_size.to_string().red(),
-                new_file_size.to_string().green()
-            ));
-        }
+    if let Some(old_size) = yaml_data.get("file_size").and_then(|v| v.as_u64())
+        && old_size != new_file_size
+    {
+        changes.push(format!(
+            "  file_size: {} → {}",
+            old_size.to_string().red(),
+            new_file_size.to_string().green()
+        ));
     }
 
     // Check modified date
-    if let Some(new_mod) = &new_modified {
-        if let Some(old_mod) = yaml_data.get("modified").and_then(|v| v.as_str()) {
-            if old_mod != new_mod {
-                changes.push(format!(
-                    "  modified: {} → {}",
-                    old_mod.red(),
-                    new_mod.green()
-                ));
-            }
-        }
+    if let Some(new_mod) = &new_modified
+        && let Some(old_mod) = yaml_data.get("modified").and_then(|v| v.as_str())
+        && old_mod != new_mod
+    {
+        changes.push(format!(
+            "  modified: {} → {}",
+            old_mod.red(),
+            new_mod.green()
+        ));
     }
 
     // Try to get audio metadata for duration/sample rate/etc
@@ -453,49 +451,48 @@ fn offer_metadata_update(
 
     if let Some(ref metadata) = audio_metadata {
         // Check duration
-        if let Some(new_duration) = metadata.duration_seconds {
-            if let Some(old_duration) = yaml_data.get("duration_seconds").and_then(|v| v.as_f64()) {
-                if (old_duration - new_duration).abs() > 0.01 {
-                    changes.push(format!(
-                        "  duration_seconds: {} → {}",
-                        format!("{old_duration:.2}").red(),
-                        format!("{new_duration:.2}").green()
-                    ));
-                }
-            }
+        if let Some(new_duration) = metadata.duration_seconds
+            && let Some(old_duration) = yaml_data.get("duration_seconds").and_then(|v| v.as_f64())
+            && (old_duration - new_duration).abs() > 0.01
+        {
+            changes.push(format!(
+                "  duration_seconds: {} → {}",
+                format!("{old_duration:.2}").red(),
+                format!("{new_duration:.2}").green()
+            ));
         }
 
         // Check sample rate
-        if let Some(old_rate) = yaml_data.get("sample_rate").and_then(|v| v.as_u64()) {
-            if old_rate != metadata.sample_rate as u64 {
-                changes.push(format!(
-                    "  sample_rate: {} → {}",
-                    old_rate.to_string().red(),
-                    metadata.sample_rate.to_string().green()
-                ));
-            }
+        if let Some(old_rate) = yaml_data.get("sample_rate").and_then(|v| v.as_u64())
+            && old_rate != metadata.sample_rate as u64
+        {
+            changes.push(format!(
+                "  sample_rate: {} → {}",
+                old_rate.to_string().red(),
+                metadata.sample_rate.to_string().green()
+            ));
         }
 
         // Check channels
-        if let Some(old_channels) = yaml_data.get("channels").and_then(|v| v.as_u64()) {
-            if old_channels != metadata.channels as u64 {
-                changes.push(format!(
-                    "  channels: {} → {}",
-                    old_channels.to_string().red(),
-                    metadata.channels.to_string().green()
-                ));
-            }
+        if let Some(old_channels) = yaml_data.get("channels").and_then(|v| v.as_u64())
+            && old_channels != metadata.channels as u64
+        {
+            changes.push(format!(
+                "  channels: {} → {}",
+                old_channels.to_string().red(),
+                metadata.channels.to_string().green()
+            ));
         }
 
         // Check bits per sample
-        if let Some(old_bits) = yaml_data.get("bits_per_sample").and_then(|v| v.as_u64()) {
-            if old_bits != metadata.bits_per_sample as u64 {
-                changes.push(format!(
-                    "  bits_per_sample: {} → {}",
-                    old_bits.to_string().red(),
-                    metadata.bits_per_sample.to_string().green()
-                ));
-            }
+        if let Some(old_bits) = yaml_data.get("bits_per_sample").and_then(|v| v.as_u64())
+            && old_bits != metadata.bits_per_sample as u64
+        {
+            changes.push(format!(
+                "  bits_per_sample: {} → {}",
+                old_bits.to_string().red(),
+                metadata.bits_per_sample.to_string().green()
+            ));
         }
     }
 

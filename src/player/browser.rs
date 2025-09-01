@@ -82,12 +82,12 @@ impl Browser {
 
     fn scan_directory_recursive(&mut self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         // Skip hidden directories (starting with .)
-        if let Some(name) = path.file_name() {
-            if let Some(name_str) = name.to_str() {
-                if name_str.starts_with('.') && path != Path::new(".") {
-                    return Ok(());
-                }
-            }
+        if let Some(name) = path.file_name()
+            && let Some(name_str) = name.to_str()
+            && name_str.starts_with('.')
+            && path != Path::new(".")
+        {
+            return Ok(());
         }
 
         for entry in fs::read_dir(path)? {
@@ -110,12 +110,11 @@ impl Browser {
                 }
 
                 // Skip . and .. to avoid infinite recursion
-                if let Some(name) = path.file_name() {
-                    if let Some(name_str) = name.to_str() {
-                        if name_str == "." || name_str == ".." {
-                            continue;
-                        }
-                    }
+                if let Some(name) = path.file_name()
+                    && let Some(name_str) = name.to_str()
+                    && (name_str == "." || name_str == "..")
+                {
+                    continue;
                 }
                 // Recursively scan subdirectories
                 if let Err(e) = self.scan_directory_recursive(&path) {

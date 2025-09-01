@@ -318,10 +318,10 @@ impl AudioTelemetry {
     }
 
     fn output_json(&self, snapshot: &TelemetrySnapshot) {
-        if let Ok(json) = serde_json::to_string(snapshot) {
-            if self.config.debug_audio_levels || self.config.debug_format_info {
-                log::debug!("TELEMETRY_JSON: {json}");
-            }
+        if let Ok(json) = serde_json::to_string(snapshot)
+            && (self.config.debug_audio_levels || self.config.debug_format_info)
+        {
+            log::debug!("TELEMETRY_JSON: {json}");
         }
     }
 

@@ -285,12 +285,12 @@ impl App {
             let loop_end = mark_in.max(mark_out);
 
             // Check if we've reached the end of the loop or are before the start
-            if self.playback_position >= loop_end || self.playback_position < loop_start {
-                if let Some(duration) = self.duration {
-                    let current_seconds = duration.as_secs_f32() * self.playback_position;
-                    let start_seconds = duration.as_secs_f32() * loop_start;
-                    return Some(start_seconds - current_seconds);
-                }
+            if (self.playback_position >= loop_end || self.playback_position < loop_start)
+                && let Some(duration) = self.duration
+            {
+                let current_seconds = duration.as_secs_f32() * self.playback_position;
+                let start_seconds = duration.as_secs_f32() * loop_start;
+                return Some(start_seconds - current_seconds);
             }
         }
         None
@@ -359,15 +359,14 @@ impl App {
             );
 
             // If starting loop, jump to mark in position
-            if self.is_looping {
-                if let (Some(mark_in), Some(duration), Some(engine)) =
+            if self.is_looping
+                && let (Some(mark_in), Some(duration), Some(engine)) =
                     (self.mark_in, self.duration, &mut self.audio_engine)
-                {
-                    let start_seconds = duration.as_secs_f32() * mark_in;
-                    let current_seconds = duration.as_secs_f32() * self.playback_position;
-                    let offset = start_seconds - current_seconds;
-                    let _ = engine.seek_relative(offset);
-                }
+            {
+                let start_seconds = duration.as_secs_f32() * mark_in;
+                let current_seconds = duration.as_secs_f32() * self.playback_position;
+                let offset = start_seconds - current_seconds;
+                let _ = engine.seek_relative(offset);
             }
         } else {
             info!("Cannot loop without both marks set");
@@ -475,13 +474,12 @@ impl App {
         };
 
         // If audio save succeeded, try to clone and modify the sidecar file
-        if audio_result.is_ok() {
-            if let Err(e) =
+        if audio_result.is_ok()
+            && let Err(e) =
                 self.clone_sidecar_for_selection(source_path, &dest_path, mark_in, mark_out)
-            {
-                log::warn!("Failed to create sidecar file: {e}");
-                // Don't fail the entire operation if sidecar creation fails
-            }
+        {
+            log::warn!("Failed to create sidecar file: {e}");
+            // Don't fail the entire operation if sidecar creation fails
         }
 
         audio_result
@@ -814,18 +812,18 @@ pub fn run_with_file(file_path: Option<&str>) -> Result<(), Box<dyn Error>> {
         log::error!("Could not scan directory: {e}");
     }
 
-    if let Some(path) = file_path {
-        if let Err(e) = app.load_file(path) {
-            // Clean up terminal before showing error
-            disable_raw_mode()?;
-            execute!(
-                terminal.backend_mut(),
-                LeaveAlternateScreen,
-                DisableMouseCapture
-            )?;
-            terminal.show_cursor()?;
-            return Err(e);
-        }
+    if let Some(path) = file_path
+        && let Err(e) = app.load_file(path)
+    {
+        // Clean up terminal before showing error
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
+        return Err(e);
     }
 
     let res = run_app(&mut terminal, app);
@@ -857,10 +855,10 @@ fn run_app<B: ratatui::backend::Backend>(
         terminal.draw(|f| ui::draw(f, &app))?;
 
         // Poll for events with a short timeout to allow continuous rendering
-        if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                handle_key_event(&mut app, key)?;
-            }
+        if event::poll(Duration::from_millis(50))?
+            && let Event::Key(key) = event::read()?
+        {
+            handle_key_event(&mut app, key)?;
         }
 
         if app.should_quit {
@@ -1057,14 +1055,14 @@ fn handle_integrated_browser_keys(
                         // If we were previewing this file, restore the position
                         if let Some(position) = current_position {
                             // Seek to the previous position
-                            if let Some(duration) = app.duration {
-                                if let Some(engine) = &mut app.audio_engine {
-                                    // Since load_file resets to position 0, we need to seek forward
-                                    // by the absolute amount
-                                    let target_seconds = duration.as_secs_f32() * position;
-                                    engine.seek_relative(target_seconds)?;
-                                    // Note: playback_position will be updated by the next update_waveform call
-                                }
+                            if let Some(duration) = app.duration
+                                && let Some(engine) = &mut app.audio_engine
+                            {
+                                // Since load_file resets to position 0, we need to seek forward
+                                // by the absolute amount
+                                let target_seconds = duration.as_secs_f32() * position;
+                                engine.seek_relative(target_seconds)?;
+                                // Note: playback_position will be updated by the next update_waveform call
                             }
 
                             // Restore play state if it was playing
