@@ -51,15 +51,12 @@ impl SaveDialog {
         // Read current directory
         if let Ok(entries) = fs::read_dir(&self.current_path) {
             for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_dir() {
-                        if let Some(name) = entry.file_name().to_str() {
-                            // Skip hidden directories
-                            if !name.starts_with('.') {
-                                self.directories.push(name.to_string());
-                            }
-                        }
-                    }
+                if let Ok(metadata) = entry.metadata()
+                    && metadata.is_dir()
+                    && let Some(name) = entry.file_name().to_str()
+                    && !name.starts_with('.')
+                {
+                    self.directories.push(name.to_string());
                 }
             }
         }
