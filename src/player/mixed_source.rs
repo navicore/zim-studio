@@ -382,8 +382,8 @@ impl Iterator for DynamicMixer {
             return None;
         }
 
-        // Clamp to prevent clipping
-        let final_sample = mixed_sample.clamp(-1.0, 1.0);
+        // Soft limit to prevent harsh clipping
+        let final_sample = mixed_sample.tanh();
 
         // Update samples played counter
         self.samples_played.fetch_add(1, Ordering::Relaxed);
