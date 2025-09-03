@@ -35,6 +35,9 @@ pub struct AudioEngine {
     total_samples: usize,
     current_file_path: Option<String>,
     cached_aiff_data: Option<crate::media::metadata::AiffData>,
+    // For mixed sources
+    mixed_file_paths: Option<Vec<String>>,
+    mixed_gains: Option<Vec<f32>>,
 }
 
 impl AudioEngine {
@@ -56,6 +59,8 @@ impl AudioEngine {
                 total_samples: 0,
                 current_file_path: None,
                 cached_aiff_data: None,
+                mixed_file_paths: None,
+                mixed_gains: None,
             },
             samples_rx,
         ))
@@ -114,9 +119,13 @@ impl AudioEngine {
         // Reset position tracking
         self.samples_played.store(0, Ordering::Relaxed);
 
-        // Clear file path since we're mixing multiple files
+        // Clear single file data since we're mixing multiple files
         self.current_file_path = None;
         self.cached_aiff_data = None;
+
+        // Store mixed file information for seeking
+        self.mixed_file_paths = Some(paths.to_vec());
+        self.mixed_gains = gains.clone();
 
         // Create mixed source
         let mixed_source = crate::player::mixed_source::create_mixed_source_from_files(
@@ -146,6 +155,52 @@ impl AudioEngine {
 
         log::info!(
             "Playing mixed audio: {} files, {} Hz, {} channels",
+            paths.len(),
+            mixed_source.sample_rate(),
+            mixed_source.channels()
+        );
+
+        // Play through rodio
+        self.sink.append(mixed_source);
+
+        Ok(())
+    }
+
+    fn load_files_from_position(
+        &mut self,
+        paths: &[String],
+        gains: Option<Vec<f32>>,
+        start_sample: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        // Create mixed source with seeking support
+        let mixed_source = crate::player::mixed_source::create_mixed_source_from_files_with_seek(
+            paths,
+            gains,
+            start_sample,
+            self.samples_tx.clone(),
+            self.samples_played.clone(),
+        )?;
+
+        // Get info from mixed source
+        self.info = Some(AudioInfo {
+            channels: mixed_source.channels(),
+            sample_rate: mixed_source.sample_rate(),
+        });
+
+        self.duration = mixed_source.total_duration();
+
+        // For mixed sources, estimate total samples
+        if let Some(duration) = self.duration {
+            let sample_rate = mixed_source.sample_rate() as f64;
+            let channels = mixed_source.channels() as f64;
+            self.total_samples = (duration.as_secs_f64() * sample_rate * channels) as usize;
+        } else {
+            self.total_samples = 0;
+        }
+
+        log::info!(
+            "Playing mixed audio from sample {}: {} files, {} Hz, {} channels",
+            start_sample,
             paths.len(),
             mixed_source.sample_rate(),
             mixed_source.channels()
@@ -419,34 +474,36 @@ impl AudioEngine {
             let new_position = (current + sample_offset).max(0) as usize;
             let new_position = new_position.min(self.total_samples);
 
-            // Since rodio doesn't support seeking, we need to reload the file at the new position
+            // Since rodio doesn't support seeking, we need to reload sources at the new position
+            let was_playing = !self.sink.is_paused();
+
+            // Stop current playback
+            self.sink.stop();
+            self.sink.stop(); // Double-stop for rodio 0.21 compatibility
+
+            // Update position counter
+            self.samples_played.store(new_position, Ordering::Relaxed);
+
+            // Handle single file vs mixed files
             if let Some(path) = self.current_file_path.clone() {
-                let was_playing = !self.sink.is_paused();
-
-                // Stop current playback
-                self.sink.stop();
-
-                // Create a new sink
-                // Note: We can't easily recreate the sink from stored stream in rodio 0.21
-                // For now, we'll clear the current sink
-                self.sink.stop();
-
-                // Update position counter
-                self.samples_played.store(new_position, Ordering::Relaxed);
-
-                // Reload the file starting from the new position
+                // Single file seeking
                 self.load_file_from_position(Path::new(&path), new_position)?;
-
-                if was_playing {
-                    self.play();
-                }
-
-                log::info!(
-                    "Seek to sample {} ({}%)",
-                    new_position,
-                    (new_position as f32 / self.total_samples as f32 * 100.0) as u32
-                );
+            } else if let (Some(paths), gains) =
+                (self.mixed_file_paths.clone(), self.mixed_gains.clone())
+            {
+                // Mixed files seeking
+                self.load_files_from_position(&paths, gains, new_position)?;
             }
+
+            if was_playing {
+                self.play();
+            }
+
+            log::info!(
+                "Seek to sample {} ({}%)",
+                new_position,
+                (new_position as f32 / self.total_samples as f32 * 100.0) as u32
+            );
         }
         Ok(())
     }
