@@ -150,7 +150,7 @@ impl Iterator for WavSourceNoMonitor {
             16 => sample as f32 / 32768.0,
             24 => sample as f32 / 8388608.0,
             32 => sample as f32 / 2147483648.0,
-            8 => (sample << 8) as f32 / 32768.0,
+            8 => sample as f32 / 128.0,
             _ => sample as f32 / 32768.0,
         };
 
