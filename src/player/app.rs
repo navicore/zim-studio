@@ -107,6 +107,44 @@ impl App {
         Ok(())
     }
 
+    pub fn load_files(
+        &mut self,
+        paths: &[String],
+        gains: Option<Vec<f32>>,
+    ) -> Result<(), Box<dyn Error>> {
+        // Create audio engine if needed
+        if self.audio_engine.is_none() {
+            let (engine, samples_rx) = AudioEngine::new()?;
+            self.audio_engine = Some(engine);
+            self.samples_rx = Some(samples_rx);
+        }
+
+        // Load the files for mixing
+        if let Some(engine) = &mut self.audio_engine {
+            engine.load_files(paths, gains)?;
+
+            // Update channel info and duration
+            if let Some(info) = &engine.info {
+                self.is_stereo = info.channels > 1;
+            }
+            self.duration = engine.duration;
+
+            // Store files info for display
+            let display_name = if paths.len() == 1 {
+                paths[0].clone()
+            } else {
+                format!("Mixing {} files", paths.len())
+            };
+            self.current_file = Some(display_name);
+
+            // Start playback automatically when files are loaded
+            self.is_playing = true;
+            engine.play();
+        }
+
+        Ok(())
+    }
+
     /// Enable telemetry with custom configuration for debugging slew gates and VC control
     #[allow(dead_code)]
     pub fn enable_telemetry(&mut self, config: TelemetryConfig) {
@@ -791,7 +829,10 @@ Add your notes and tags here to document this excerpt.
     }
 }
 
-pub fn run_with_file(file_path: Option<&str>) -> Result<(), Box<dyn Error>> {
+pub fn run_with_file(
+    file_path: Option<&str>,
+    _gains: Option<Vec<f32>>,
+) -> Result<(), Box<dyn Error>> {
     // Initialize logging
     init_logging()?;
     info!("Starting ZIM Audio Player");
@@ -815,6 +856,55 @@ pub fn run_with_file(file_path: Option<&str>) -> Result<(), Box<dyn Error>> {
     if let Some(path) = file_path
         && let Err(e) = app.load_file(path)
     {
+        // Clean up terminal before showing error
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
+        return Err(e);
+    }
+
+    let res = run_app(&mut terminal, app);
+
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        eprintln!("Error: {err}");
+    }
+
+    Ok(())
+}
+
+pub fn run_with_files(
+    file_paths: &[String],
+    gains: Option<Vec<f32>>,
+) -> Result<(), Box<dyn Error>> {
+    // Initialize logging
+    init_logging()?;
+    info!("Starting ZIM Audio Player in mixing mode");
+
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Create app and load files for mixing
+    let mut app = App::new();
+
+    // Load multiple files
+    if let Err(e) = app.load_files(file_paths, gains) {
         // Clean up terminal before showing error
         disable_raw_mode()?;
         execute!(

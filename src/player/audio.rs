@@ -103,6 +103,60 @@ impl AudioEngine {
         Ok(())
     }
 
+    pub fn load_files(
+        &mut self,
+        paths: &[String],
+        gains: Option<Vec<f32>>,
+    ) -> Result<(), Box<dyn Error>> {
+        // Stop any currently playing audio
+        self.sink.stop();
+
+        // Reset position tracking
+        self.samples_played.store(0, Ordering::Relaxed);
+
+        // Clear file path since we're mixing multiple files
+        self.current_file_path = None;
+        self.cached_aiff_data = None;
+
+        // Create mixed source
+        let mixed_source = crate::player::mixed_source::create_mixed_source_from_files(
+            paths,
+            gains,
+            self.samples_tx.clone(),
+            self.samples_played.clone(),
+        )?;
+
+        // Get info from mixed source
+        self.info = Some(AudioInfo {
+            channels: mixed_source.channels(),
+            sample_rate: mixed_source.sample_rate(),
+        });
+
+        self.duration = mixed_source.total_duration();
+
+        // For mixed sources, we can't easily calculate total samples
+        // Use duration and sample rate to estimate
+        if let Some(duration) = self.duration {
+            let sample_rate = mixed_source.sample_rate() as f64;
+            let channels = mixed_source.channels() as f64;
+            self.total_samples = (duration.as_secs_f64() * sample_rate * channels) as usize;
+        } else {
+            self.total_samples = 0;
+        }
+
+        log::info!(
+            "Playing mixed audio: {} files, {} Hz, {} channels",
+            paths.len(),
+            mixed_source.sample_rate(),
+            mixed_source.channels()
+        );
+
+        // Play through rodio
+        self.sink.append(mixed_source);
+
+        Ok(())
+    }
+
     fn play_wav(
         &mut self,
         reader: hound::WavReader<BufReader<File>>,
@@ -399,7 +453,7 @@ impl AudioEngine {
 }
 
 // Custom source that monitors samples for visualization
-struct WavSource {
+pub struct WavSource {
     samples_tx: mpsc::Sender<Vec<f32>>,
     sample_rate: u32,
     channels: u16,
@@ -411,7 +465,7 @@ struct WavSource {
 }
 
 impl WavSource {
-    fn new(
+    pub fn new(
         mut reader: hound::WavReader<BufReader<File>>,
         samples_tx: mpsc::Sender<Vec<f32>>,
         samples_played: Arc<AtomicUsize>,
@@ -515,7 +569,7 @@ impl Source for WavSource {
 }
 
 // FLAC source with monitoring
-struct FlacSource {
+pub struct FlacSource {
     samples_tx: mpsc::Sender<Vec<f32>>,
     sample_rate: u32,
     channels: u32,
@@ -527,7 +581,7 @@ struct FlacSource {
 }
 
 impl FlacSource {
-    fn new<R: Read>(
+    pub fn new<R: Read>(
         mut reader: claxon::FlacReader<R>,
         samples_tx: mpsc::Sender<Vec<f32>>,
         samples_played: Arc<AtomicUsize>,
@@ -613,7 +667,7 @@ impl Source for FlacSource {
 }
 
 // AIFF source with monitoring
-struct AiffSource {
+pub struct AiffSource {
     samples_tx: mpsc::Sender<Vec<f32>>,
     sample_rate: u32,
     channels: u16,
@@ -635,7 +689,7 @@ impl AiffSource {
         Self::from_data(aiff_data, samples_tx, samples_played)
     }
 
-    fn from_data(
+    pub fn from_data(
         aiff_data: crate::media::metadata::AiffData,
         samples_tx: mpsc::Sender<Vec<f32>>,
         samples_played: Arc<AtomicUsize>,
