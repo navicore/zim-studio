@@ -82,10 +82,20 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
-    /// Play audio files with integrated player (coming soon)
+    /// Play audio files with integrated player (supports mixing up to 3 files)
     Play {
-        /// Search pattern or file path
-        pattern: Option<String>,
+        /// Audio file paths (up to 3 files for mixing)
+        files: Vec<String>,
+        /// Gain levels for each file (comma-separated, e.g., "0.8,1.2,0.6")
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            value_name = "GAIN1,GAIN2,GAIN3",
+            help = "Gain levels for each file (0.0-2.0 range)",
+            long_help = "Comma-separated gain values for each file (0.0-2.0 range).\nExample: --gains 0.8,1.2,0.6\nDefaults to 1.0 for all files if not specified."
+        )]
+        gains: Option<Vec<f32>>,
         /// Start interactive mode for browsing and playing
         #[arg(short, long)]
         interactive: bool,
@@ -161,10 +171,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             cli::lint::handle_lint(&path)?;
         }
         Commands::Play {
-            pattern,
+            files,
+            gains,
             interactive,
         } => {
-            cli::play::handle_play(pattern.as_deref(), interactive)?;
+            cli::play::handle_play(files, gains, interactive)?;
         }
     }
 

@@ -1,14 +1,63 @@
 use std::error::Error;
 
-pub fn handle_play(pattern: Option<&str>, interactive: bool) -> Result<(), Box<dyn Error>> {
+pub fn handle_play(
+    files: Vec<String>,
+    gains: Option<Vec<f32>>,
+    interactive: bool,
+) -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "player")]
     {
-        crate::player::run(pattern, interactive)
+        // Validate inputs
+        if files.is_empty() && !interactive {
+            use owo_colors::OwoColorize;
+            println!(
+                "{} No files specified. Use {} flag for browser mode.",
+                "Error:".red(),
+                "--interactive".cyan()
+            );
+            return Err("No files specified".into());
+        }
+
+        if files.len() > 3 {
+            use owo_colors::OwoColorize;
+            println!("{} Maximum 3 files supported for mixing.", "Error:".red());
+            return Err("Too many files specified".into());
+        }
+
+        // Validate gains if provided
+        if let Some(ref g) = gains {
+            if !files.is_empty() && g.len() != files.len() {
+                use owo_colors::OwoColorize;
+                println!(
+                    "{} Number of gains ({}) must match number of files ({}).",
+                    "Error:".red(),
+                    g.len(),
+                    files.len()
+                );
+                return Err("Gain count mismatch".into());
+            }
+
+            for (i, gain) in g.iter().enumerate() {
+                if *gain < 0.0 || *gain > 2.0 {
+                    use owo_colors::OwoColorize;
+                    println!(
+                        "{} Gain {} ({}) must be between 0.0 and 2.0.",
+                        "Error:".red(),
+                        i + 1,
+                        gain
+                    );
+                    return Err("Invalid gain value".into());
+                }
+            }
+        }
+
+        crate::player::run(files, gains, interactive)
     }
 
     #[cfg(not(feature = "player"))]
     {
-        let _ = pattern;
+        let _ = files;
+        let _ = gains;
         let _ = interactive;
         use owo_colors::OwoColorize;
         println!("{} {}", "🎵".cyan(), "Audio Player".bold());

@@ -257,6 +257,15 @@ The stereo LED indicators show real-time audio levels:
 4. **Long Recording Navigation**: Use Shift+Arrow for 20% jumps to quickly navigate through long recordings
 5. **Metadata Preservation**: When saving selections, source metadata is automatically cloned with updated duration and provenance tracking
 6. **No Mouse Needed**: Everything is keyboard-driven for speed
+7. **Mix Multiple Files**: Audition up to 3 files simultaneously with individual gain control:
+   ```bash
+   # Mix with equal volume
+   zim play drums.wav bass.wav vocals.wav
+   
+   # Mix with custom gains (0.0-2.0 range)
+   zim play drums.wav bass.wav vocals.wav --gains 0.8,1.2,0.6
+   ```
+   See [mixing guide](docs/mixing-guide.md) for detailed examples
 
 ### Troubleshooting
 
