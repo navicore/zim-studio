@@ -66,25 +66,26 @@ pub fn draw_save_dialog(f: &mut Frame, area: Rect, dialog: &SaveDialog) {
     let dirs: Vec<ListItem> = dialog
         .directories
         .iter()
-        .enumerate()
-        .map(|(i, dir)| {
-            let is_selected =
-                i == dialog.selected_index && dialog.focus == SaveDialogFocus::DirectoryList;
-            let style = if is_selected {
-                Style::default()
-                    .bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
+        .map(|dir| {
             let prefix = if dir == ".." { "↑ " } else { "📁 " };
-            ListItem::new(format!("{prefix}{dir}")).style(style)
+            ListItem::new(format!("{prefix}{dir}"))
         })
         .collect();
 
-    let dirs_list = List::new(dirs).block(Block::default().borders(Borders::NONE));
-    f.render_widget(dirs_list, chunks[1]);
+    let dirs_list = List::new(dirs)
+        .block(Block::default().borders(Borders::NONE))
+        .highlight_style(if dialog.focus == SaveDialogFocus::DirectoryList {
+            Style::default()
+                .bg(Color::DarkGray)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().bg(Color::Gray).fg(Color::Black)
+        });
+
+    // Use render_stateful_widget to enable scrolling
+    let mut list_state = dialog.list_state.clone();
+    f.render_stateful_widget(dirs_list, chunks[1], &mut list_state);
 
     // Filename field
     let filename_block = Block::default()
