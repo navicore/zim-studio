@@ -5,6 +5,7 @@
 //! saving a selection or the full file, and automatically generates appropriate
 //! filenames for edits (e.g., "original_edit.wav", "original_edit_2.wav").
 
+use ratatui::widgets::ListState;
 use std::fs;
 use std::path::PathBuf;
 
@@ -16,6 +17,7 @@ pub struct SaveDialog {
     pub selected_index: usize,
     pub focus: SaveDialogFocus,
     pub has_selection: bool, // Whether we're saving a selection or full file
+    pub list_state: ListState, // For proper scrolling in directory list
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,6 +35,7 @@ impl SaveDialog {
             selected_index: 0,
             focus: SaveDialogFocus::DirectoryList,
             has_selection,
+            list_state: ListState::default(),
         };
 
         // Load directories for initial path
@@ -71,19 +74,22 @@ impl SaveDialog {
             self.directories.sort();
         }
 
-        // Reset selection
+        // Reset selection and sync ListState
         self.selected_index = 0;
+        self.list_state.select(Some(0));
     }
 
     pub fn navigate_up(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
+            self.list_state.select(Some(self.selected_index));
         }
     }
 
     pub fn navigate_down(&mut self) {
         if self.selected_index < self.directories.len().saturating_sub(1) {
             self.selected_index += 1;
+            self.list_state.select(Some(self.selected_index));
         }
     }
 
