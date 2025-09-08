@@ -459,9 +459,9 @@ checksum = "7fd99930f64d146689264c637b5af2f0233a933bef0d8570e2526bf9e083192d"
 
 [[package]]
 name = "flag-rs"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d3600fc130de6c411e1025d7e329f3e2e5f642291c9e45507499d699b5817ff"
+checksum = "402467c136164dcc84f7a1720b1b2c640ac4271279082c0a9d4958d36ab3d66e"
 
 [[package]]
 name = "fnv"

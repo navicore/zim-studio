@@ -27,37 +27,6 @@ mod templates;
 #[cfg(feature = "player")]
 mod player;
 
-fn gain_completion(
-    _ctx: &flag_rs::Context,
-    _prefix: &str,
-) -> Result<CompletionResult, flag_rs::Error> {
-    let mut result = CompletionResult::new();
-
-    result = result.add_with_description("0.5", "Quiet (-6dB)");
-    result = result.add_with_description("0.8", "Slightly quieter");
-    result = result.add_with_description("1.0", "Unity gain (default)");
-    result = result.add_with_description("1.2", "Slightly louder");
-    result = result.add_with_description("1.5", "Moderately loud (+3.5dB)");
-    result = result.add_with_description("2.0", "Maximum (+6dB)");
-
-    Ok(result)
-}
-
-fn pan_completion(
-    _ctx: &flag_rs::Context,
-    _prefix: &str,
-) -> Result<CompletionResult, flag_rs::Error> {
-    let mut result = CompletionResult::new();
-
-    result = result.add_with_description("0.0", "Hard left");
-    result = result.add_with_description("0.2", "Left bias");
-    result = result.add_with_description("0.5", "Center (default)");
-    result = result.add_with_description("0.8", "Right bias");
-    result = result.add_with_description("1.0", "Hard right");
-
-    Ok(result)
-}
-
 fn build_root_command() -> flag_rs::Command {
     CommandBuilder::new("zim")
         .short("Terminal-based audio project scaffold and metadata system")
@@ -117,6 +86,22 @@ fn build_root_command() -> flag_rs::Command {
             CommandBuilder::new("completions")
                 .short("Generate shell completions")
                 .args(ArgValidator::ExactArgs(1))
+                .arg_completion(|_ctx, prefix| {
+                    let shells = vec![
+                        ("bash", "Bash shell completion"),
+                        ("zsh", "Zsh shell completion"),
+                        ("fish", "Fish shell completion"),
+                    ];
+
+                    let mut result = CompletionResult::new();
+                    for (shell, description) in shells {
+                        if shell.starts_with(prefix) {
+                            result = result.add_with_description(shell.to_string(), description.to_string());
+                        }
+                    }
+
+                    Ok(result)
+                })
                 .run(|ctx| {
                     let args = ctx.args();
                     if args.is_empty() {
@@ -237,38 +222,89 @@ fn build_root_command() -> flag_rs::Command {
                     Flag::new("file1-gain")
                         .usage("Gain level for first file (0.0-2.0 range). Common: 1.0=unity, 0.8=quieter, 1.2=louder")
                         .value_type(FlagType::String)
-                        .completion(gain_completion)
                 )
+                .flag_completion("file1-gain", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.5", "Quiet (-6dB)");
+                    result = result.add_with_description("0.8", "Slightly quieter");
+                    result = result.add_with_description("1.0", "Unity gain (default)");
+                    result = result.add_with_description("1.2", "Slightly louder");
+                    result = result.add_with_description("1.5", "Moderately loud (+3.5dB)");
+                    result = result.add_with_description("2.0", "Maximum (+6dB)");
+                    Ok(result)
+                })
                 .flag(
                     Flag::new("file2-gain")
                         .usage("Gain level for second file (0.0-2.0 range). Common: 1.0=unity, 0.8=quieter, 1.2=louder")
                         .value_type(FlagType::String)
-                        .completion(gain_completion)
                 )
+                .flag_completion("file2-gain", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.5", "Quiet (-6dB)");
+                    result = result.add_with_description("0.8", "Slightly quieter");
+                    result = result.add_with_description("1.0", "Unity gain (default)");
+                    result = result.add_with_description("1.2", "Slightly louder");
+                    result = result.add_with_description("1.5", "Moderately loud (+3.5dB)");
+                    result = result.add_with_description("2.0", "Maximum (+6dB)");
+                    Ok(result)
+                })
                 .flag(
                     Flag::new("file3-gain")
                         .usage("Gain level for third file (0.0-2.0 range). Common: 1.0=unity, 0.8=quieter, 1.2=louder")
                         .value_type(FlagType::String)
-                        .completion(gain_completion)
                 )
+                .flag_completion("file3-gain", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.5", "Quiet (-6dB)");
+                    result = result.add_with_description("0.8", "Slightly quieter");
+                    result = result.add_with_description("1.0", "Unity gain (default)");
+                    result = result.add_with_description("1.2", "Slightly louder");
+                    result = result.add_with_description("1.5", "Moderately loud (+3.5dB)");
+                    result = result.add_with_description("2.0", "Maximum (+6dB)");
+                    Ok(result)
+                })
                 .flag(
                     Flag::new("file1-pan")
                         .usage("Pan position for first file (0.0-1.0 range). 0.0=left, 0.5=center, 1.0=right")
                         .value_type(FlagType::String)
-                        .completion(pan_completion)
                 )
+                .flag_completion("file1-pan", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.0", "Hard left");
+                    result = result.add_with_description("0.2", "Left bias");
+                    result = result.add_with_description("0.5", "Center (default)");
+                    result = result.add_with_description("0.8", "Right bias");
+                    result = result.add_with_description("1.0", "Hard right");
+                    Ok(result)
+                })
                 .flag(
                     Flag::new("file2-pan")
                         .usage("Pan position for second file (0.0-1.0 range). 0.0=left, 0.5=center, 1.0=right")
                         .value_type(FlagType::String)
-                        .completion(pan_completion)
                 )
+                .flag_completion("file2-pan", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.0", "Hard left");
+                    result = result.add_with_description("0.2", "Left bias");
+                    result = result.add_with_description("0.5", "Center (default)");
+                    result = result.add_with_description("0.8", "Right bias");
+                    result = result.add_with_description("1.0", "Hard right");
+                    Ok(result)
+                })
                 .flag(
                     Flag::new("file3-pan")
                         .usage("Pan position for third file (0.0-1.0 range). 0.0=left, 0.5=center, 1.0=right")
                         .value_type(FlagType::String)
-                        .completion(pan_completion)
                 )
+                .flag_completion("file3-pan", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.0", "Hard left");
+                    result = result.add_with_description("0.2", "Left bias");
+                    result = result.add_with_description("0.5", "Center (default)");
+                    result = result.add_with_description("0.8", "Right bias");
+                    result = result.add_with_description("1.0", "Hard right");
+                    Ok(result)
+                })
                 .flag(
                     Flag::new("interactive")
                         .short('i')
@@ -276,6 +312,63 @@ fn build_root_command() -> flag_rs::Command {
                         .value_type(FlagType::Bool)
                         .default(FlagValue::Bool(false))
                 )
+                .flag_completion("file1-gain", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.5", "Quiet (-6dB)");
+                    result = result.add_with_description("0.8", "Slightly quieter");
+                    result = result.add_with_description("1.0", "Unity gain (default)");
+                    result = result.add_with_description("1.2", "Slightly louder");
+                    result = result.add_with_description("1.5", "Moderately loud (+3.5dB)");
+                    result = result.add_with_description("2.0", "Maximum (+6dB)");
+                    Ok(result)
+                })
+                .flag_completion("file2-gain", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.5", "Quiet (-6dB)");
+                    result = result.add_with_description("0.8", "Slightly quieter");
+                    result = result.add_with_description("1.0", "Unity gain (default)");
+                    result = result.add_with_description("1.2", "Slightly louder");
+                    result = result.add_with_description("1.5", "Moderately loud (+3.5dB)");
+                    result = result.add_with_description("2.0", "Maximum (+6dB)");
+                    Ok(result)
+                })
+                .flag_completion("file3-gain", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.5", "Quiet (-6dB)");
+                    result = result.add_with_description("0.8", "Slightly quieter");
+                    result = result.add_with_description("1.0", "Unity gain (default)");
+                    result = result.add_with_description("1.2", "Slightly louder");
+                    result = result.add_with_description("1.5", "Moderately loud (+3.5dB)");
+                    result = result.add_with_description("2.0", "Maximum (+6dB)");
+                    Ok(result)
+                })
+                .flag_completion("file1-pan", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.0", "Hard left");
+                    result = result.add_with_description("0.2", "Left bias");
+                    result = result.add_with_description("0.5", "Center (default)");
+                    result = result.add_with_description("0.8", "Right bias");
+                    result = result.add_with_description("1.0", "Hard right");
+                    Ok(result)
+                })
+                .flag_completion("file2-pan", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.0", "Hard left");
+                    result = result.add_with_description("0.2", "Left bias");
+                    result = result.add_with_description("0.5", "Center (default)");
+                    result = result.add_with_description("0.8", "Right bias");
+                    result = result.add_with_description("1.0", "Hard right");
+                    Ok(result)
+                })
+                .flag_completion("file3-pan", |_ctx, _prefix| {
+                    let mut result = CompletionResult::new();
+                    result = result.add_with_description("0.0", "Hard left");
+                    result = result.add_with_description("0.2", "Left bias");
+                    result = result.add_with_description("0.5", "Center (default)");
+                    result = result.add_with_description("0.8", "Right bias");
+                    result = result.add_with_description("1.0", "Hard right");
+                    Ok(result)
+                })
                 .run(|ctx| {
                     // Combine named arguments
                     let mut all_files = Vec::new();
