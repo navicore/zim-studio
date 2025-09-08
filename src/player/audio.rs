@@ -38,6 +38,7 @@ pub struct AudioEngine {
     // For mixed sources
     mixed_file_paths: Option<Vec<String>>,
     mixed_gains: Option<Vec<f32>>,
+    mixed_pans: Option<Vec<f32>>,
 }
 
 impl AudioEngine {
@@ -61,6 +62,7 @@ impl AudioEngine {
                 cached_aiff_data: None,
                 mixed_file_paths: None,
                 mixed_gains: None,
+                mixed_pans: None,
             },
             samples_rx,
         ))
@@ -112,6 +114,7 @@ impl AudioEngine {
         &mut self,
         paths: &[String],
         gains: Option<Vec<f32>>,
+        pans: Option<Vec<f32>>,
     ) -> Result<(), Box<dyn Error>> {
         // Stop any currently playing audio
         self.sink.stop();
@@ -126,11 +129,13 @@ impl AudioEngine {
         // Store mixed file information for seeking
         self.mixed_file_paths = Some(paths.to_vec());
         self.mixed_gains = gains.clone();
+        self.mixed_pans = pans.clone();
 
         // Create mixed source
         let mixed_source = crate::player::mixed_source::create_mixed_source_from_files(
             paths,
             gains,
+            pans,
             self.samples_tx.clone(),
             self.samples_played.clone(),
         )?;
@@ -170,12 +175,14 @@ impl AudioEngine {
         &mut self,
         paths: &[String],
         gains: Option<Vec<f32>>,
+        pans: Option<Vec<f32>>,
         start_sample: usize,
     ) -> Result<(), Box<dyn Error>> {
         // Create mixed source with seeking support
         let mixed_source = crate::player::mixed_source::create_mixed_source_from_files_with_seek(
             paths,
             gains,
+            pans,
             start_sample,
             self.samples_tx.clone(),
             self.samples_played.clone(),
@@ -488,11 +495,13 @@ impl AudioEngine {
             if let Some(path) = self.current_file_path.clone() {
                 // Single file seeking
                 self.load_file_from_position(Path::new(&path), new_position)?;
-            } else if let (Some(paths), gains) =
-                (self.mixed_file_paths.clone(), self.mixed_gains.clone())
-            {
+            } else if let (Some(paths), gains, pans) = (
+                self.mixed_file_paths.clone(),
+                self.mixed_gains.clone(),
+                self.mixed_pans.clone(),
+            ) {
                 // Mixed files seeking
-                self.load_files_from_position(&paths, gains, new_position)?;
+                self.load_files_from_position(&paths, gains, pans, new_position)?;
             }
 
             if was_playing {

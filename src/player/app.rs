@@ -111,6 +111,7 @@ impl App {
         &mut self,
         paths: &[String],
         gains: Option<Vec<f32>>,
+        pans: Option<Vec<f32>>,
     ) -> Result<(), Box<dyn Error>> {
         // Create audio engine if needed
         if self.audio_engine.is_none() {
@@ -121,7 +122,7 @@ impl App {
 
         // Load the files for mixing
         if let Some(engine) = &mut self.audio_engine {
-            engine.load_files(paths, gains)?;
+            engine.load_files(paths, gains, pans)?;
 
             // Update channel info and duration
             if let Some(info) = &engine.info {
@@ -832,6 +833,7 @@ Add your notes and tags here to document this excerpt.
 pub fn run_with_file(
     file_path: Option<&str>,
     _gains: Option<Vec<f32>>,
+    _pans: Option<Vec<f32>>,
 ) -> Result<(), Box<dyn Error>> {
     // Initialize logging
     init_logging()?;
@@ -888,6 +890,7 @@ pub fn run_with_file(
 pub fn run_with_files(
     file_paths: &[String],
     gains: Option<Vec<f32>>,
+    pans: Option<Vec<f32>>,
 ) -> Result<(), Box<dyn Error>> {
     // Initialize logging
     init_logging()?;
@@ -904,7 +907,7 @@ pub fn run_with_files(
     let mut app = App::new();
 
     // Load multiple files
-    if let Err(e) = app.load_files(file_paths, gains) {
+    if let Err(e) = app.load_files(file_paths, gains, pans) {
         // Clean up terminal before showing error
         disable_raw_mode()?;
         execute!(

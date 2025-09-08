@@ -21,16 +21,17 @@ use std::error::Error;
 pub fn run(
     files: Vec<String>,
     gains: Option<Vec<f32>>,
+    pans: Option<Vec<f32>>,
     _interactive: bool,
 ) -> Result<(), Box<dyn Error>> {
     // Always launch TUI for now, but load file(s) if provided
     if files.is_empty() {
-        app::run_with_file(None, None)
+        app::run_with_file(None, None, None)
     } else if files.len() == 1 {
         // Single file playback
-        app::run_with_file(Some(&files[0]), None)
+        app::run_with_file(Some(&files[0]), None, None)
     } else {
         // Multiple files - mixing mode
-        app::run_with_files(&files, gains)
+        app::run_with_files(&files, gains, pans)
     }
 }

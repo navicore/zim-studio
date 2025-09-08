@@ -5,45 +5,63 @@
 Mix up to 3 audio files simultaneously for auditioning:
 
 ```bash
-# Basic mixing (equal volume)
+# Basic mixing (equal volume, centered)
 zim play drums.wav bass.wav vocals.wav
 
 # With custom gain levels
 zim play drums.wav bass.wav vocals.wav --gains 0.8,1.2,0.6
+
+# With panning for stereo field
+zim play drums.wav bass.wav vocals.wav --pans 0.0,-0.5,0.8
+
+# Both gain and pan control
+zim play drums.wav bass.wav vocals.wav --gains 0.8,1.2,0.6 --pans 0.0,-0.5,0.8
 ```
 
-## Gain Values Reference
+## Control References
 
+### Gain Values (`--gains`)
 The `--gains` flag accepts comma-separated values from 0.0 to 2.0:
 - `1.0` = Unity gain (original volume)
 - `0.5` = Half volume (-6dB)
 - `0.0` = Mute
 - `2.0` = Double volume (+6dB, may cause clipping)
 
+### Pan Values (`--pans`)
+The `--pans` flag accepts comma-separated values from -1.0 to 1.0:
+- `-1.0` = Hard left
+- `-0.5` = Left of center
+- `0.0` = Center (default)
+- `0.5` = Right of center
+- `1.0` = Hard right
+
 ## Common Mixing Scenarios
 
 ### Two Files
 ```bash
-# Balanced mix
-zim play track1.wav track2.wav --gains 1.0,1.0
+# Balanced stereo mix
+zim play track1.wav track2.wav --gains 1.0,1.0 --pans -0.3,0.3
 
-# Emphasize first track
-zim play track1.wav track2.wav --gains 1.2,0.8
+# Left-right separation 
+zim play left.wav right.wav --pans -1.0,1.0
 
-# Background music with voiceover
-zim play music.wav voice.wav --gains 0.4,1.0
+# Background music with centered voice
+zim play music.wav voice.wav --gains 0.4,1.0 --pans -0.2,0.0
+
+# Fix stereo imbalance
+zim play track.wav track.wav --gains 1.0,0.8 --pans -0.1,0.1
 ```
 
 ### Three Files
 ```bash
-# Balanced mix with headroom
-zim play drums.wav bass.wav guitar.wav --gains 0.7,0.7,0.7
+# Classic stereo spread (drums center, bass left, guitar right)
+zim play drums.wav bass.wav guitar.wav --gains 0.8,0.7,0.7 --pans 0.0,-0.6,0.6
 
-# Rock mix (drums and bass foundation, guitar on top)
-zim play drums.wav bass.wav guitar.wav --gains 0.8,1.0,0.6
+# Wide stereo mix with centered focal point
+zim play wide1.wav vocal.wav wide2.wav --gains 0.6,1.0,0.6 --pans -0.8,0.0,0.8
 
-# Electronic mix (kick prominent, bass supporting, lead melody)
-zim play kick.wav bass.wav synth.wav --gains 1.2,0.8,0.6
+# Corrected imbalance (shift everything slightly right)
+zim play track1.wav track2.wav track3.wav --pans 0.1,0.2,0.15
 ```
 
 ## Tips for Gain Settings

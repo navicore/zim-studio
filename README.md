@@ -133,6 +133,10 @@ zim completions fish | source
 zim completions powershell | Out-String | Invoke-Expression
 ```
 
+Completions include help text for mixing parameters showing common patterns:
+- **2 files**: `--gains 0.8,1.2` (emphasize second), `--pans -0.5,0.5` (wide stereo)
+- **3 files**: `--gains 0.8,1.0,0.6` (classic rock mix), `--pans 0.0,-0.6,0.6` (center/L/R)
+
 ## Development
 
 ```bash
@@ -257,13 +261,19 @@ The stereo LED indicators show real-time audio levels:
 4. **Long Recording Navigation**: Use Shift+Arrow for 20% jumps to quickly navigate through long recordings
 5. **Metadata Preservation**: When saving selections, source metadata is automatically cloned with updated duration and provenance tracking
 6. **No Mouse Needed**: Everything is keyboard-driven for speed
-7. **Mix Multiple Files**: Audition up to 3 files simultaneously with individual gain control:
+7. **Mix Multiple Files**: Audition up to 3 files simultaneously with individual gain and pan control:
    ```bash
-   # Mix with equal volume
+   # Mix with equal volume, centered
    zim play drums.wav bass.wav vocals.wav
    
    # Mix with custom gains (0.0-2.0 range)
    zim play drums.wav bass.wav vocals.wav --gains 0.8,1.2,0.6
+   
+   # Mix with stereo panning (-1.0=left, 0.0=center, 1.0=right)  
+   zim play drums.wav bass.wav vocals.wav --pans 0.0,-0.6,0.6
+   
+   # Both gain and pan control
+   zim play drums.wav bass.wav vocals.wav --gains 0.8,1.0,0.7 --pans 0.0,-0.4,0.4
    ```
    See [mixing guide](docs/mixing-guide.md) for detailed examples
 

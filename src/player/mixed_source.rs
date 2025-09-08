@@ -15,16 +15,18 @@ use std::time::Duration;
 pub fn create_mixed_source_from_files(
     file_paths: &[String],
     gains: Option<Vec<f32>>,
+    pans: Option<Vec<f32>>,
     samples_tx: mpsc::Sender<Vec<f32>>,
     samples_played: Arc<AtomicUsize>,
 ) -> Result<Box<dyn Source<Item = f32> + Send>, Box<dyn std::error::Error>> {
-    create_mixed_source_from_files_with_seek(file_paths, gains, 0, samples_tx, samples_played)
+    create_mixed_source_from_files_with_seek(file_paths, gains, pans, 0, samples_tx, samples_played)
 }
 
 /// Helper to create a mixed source from file paths with seek support
 pub fn create_mixed_source_from_files_with_seek(
     file_paths: &[String],
     gains: Option<Vec<f32>>,
+    pans: Option<Vec<f32>>,
     start_sample: usize,
     samples_tx: mpsc::Sender<Vec<f32>>,
     samples_played: Arc<AtomicUsize>,
@@ -44,8 +46,15 @@ pub fn create_mixed_source_from_files_with_seek(
     // Default gains to 1.0 if not provided
     let gains = gains.unwrap_or_else(|| vec![1.0; file_paths.len()]);
 
+    // Default pans to 0.0 (center) if not provided
+    let pans = pans.unwrap_or_else(|| vec![0.0; file_paths.len()]);
+
     if gains.len() != file_paths.len() {
         return Err("Number of gains must match number of files".into());
+    }
+
+    if pans.len() != file_paths.len() {
+        return Err("Number of pans must match number of files".into());
     }
 
     log::info!(
@@ -105,14 +114,51 @@ pub fn create_mixed_source_from_files_with_seek(
         log::info!("Loaded {} samples from {}", all_samples[i].len(), path_str);
     }
 
-    // Pre-mix all samples into a single buffer
+    // Pre-mix all samples into a stereo buffer with panning
     let max_length = all_samples.iter().map(|s| s.len()).max().unwrap_or(0);
-    let mut mixed_samples = vec![0.0f32; max_length];
 
-    for (file_samples, gain) in all_samples.iter().zip(gains.iter()) {
-        for (i, &sample) in file_samples.iter().enumerate() {
-            if i < mixed_samples.len() {
-                mixed_samples[i] += sample * gain;
+    // Ensure we're working with stereo output when panning
+    // For stereo inputs, we need max_length samples
+    // For mono inputs mixed to stereo, we need max_length * 2 samples
+    let output_is_stereo = channels > 1;
+    let output_length = if output_is_stereo {
+        max_length // Already interleaved
+    } else {
+        max_length * 2 // Convert mono to stereo
+    };
+
+    let mut mixed_samples = vec![0.0f32; output_length];
+
+    for ((file_samples, gain), pan) in all_samples.iter().zip(gains.iter()).zip(pans.iter()) {
+        // Calculate pan coefficients using equal-power panning law
+        let pan_radians = (*pan * std::f32::consts::PI) / 4.0; // Map -1..1 to -π/4..π/4
+        let left_gain = (*gain) * (std::f32::consts::PI / 4.0 + pan_radians).cos();
+        let right_gain = (*gain) * (std::f32::consts::PI / 4.0 - pan_radians).cos();
+
+        // Mix the file samples with panning
+        if channels > 1 {
+            // Input is already stereo - apply panning to each channel
+            for (i, &sample) in file_samples.iter().enumerate() {
+                if i < mixed_samples.len() {
+                    if i % 2 == 0 {
+                        // Left channel
+                        mixed_samples[i] += sample * left_gain;
+                    } else {
+                        // Right channel
+                        mixed_samples[i] += sample * right_gain;
+                    }
+                }
+            }
+        } else {
+            // Input is mono - pan to stereo output
+            for (i, &sample) in file_samples.iter().enumerate() {
+                let stereo_left_idx = i * 2;
+                let stereo_right_idx = i * 2 + 1;
+
+                if stereo_right_idx < mixed_samples.len() {
+                    mixed_samples[stereo_left_idx] += sample * left_gain;
+                    mixed_samples[stereo_right_idx] += sample * right_gain;
+                }
             }
         }
     }
@@ -122,11 +168,18 @@ pub fn create_mixed_source_from_files_with_seek(
         *sample = sample.clamp(-1.0, 1.0);
     }
 
+    // Update channel count to stereo if we're panning
+    let output_channels = if pans.iter().any(|&p| p != 0.0) {
+        2
+    } else {
+        channels
+    };
+
     log::info!(
-        "Pre-mixed {} samples at {}Hz/{}ch ({}MB in memory)",
+        "Pre-mixed {} samples at {}Hz/{}ch with pan ({}MB in memory)",
         mixed_samples.len(),
         sample_rate,
-        channels,
+        output_channels,
         (mixed_samples.len() * 4) / (1024 * 1024) // 4 bytes per f32
     );
 
@@ -136,7 +189,7 @@ pub fn create_mixed_source_from_files_with_seek(
     let pre_mixed_source = PreMixedSource::new(
         mixed_samples,
         sample_rate,
-        channels,
+        output_channels,
         start_sample,
         samples_tx,
         samples_played,
