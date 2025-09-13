@@ -624,7 +624,7 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
                 .unwrap_or("Unknown");
 
             // Include project name if available
-            let display_text = if let Some(ref project) = item.0.metadata.project {
+            let display_text = if let Some(ref project) = item.metadata.project {
                 format!("{prefix}{filename} [{project}]")
             } else {
                 format!("{prefix}{filename}")
@@ -687,7 +687,8 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
     };
 
     // Build preview title with project name if available
-    let preview_title = if let Some((item, _)) = browser.filtered_items.get(browser.selected) {
+    let preview_title = if browser.selected < filtered_items.len() {
+        let (item, _) = filtered_items[browser.selected];
         if let Some(ref project) = item.metadata.project {
             format!("Preview - Project: {project}")
         } else {
