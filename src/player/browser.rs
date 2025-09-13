@@ -42,7 +42,7 @@ pub struct FileMetadata {
 
 pub struct Browser {
     pub items: Vec<AudioFile>,
-    pub filtered_items: Vec<(AudioFile, Option<String>)>, // (file, matched_context)
+    pub filtered_indices: Vec<(usize, Option<String>)>, // (index into items, matched_context)
     pub selected: usize,
     pub search_query: String,
     pub focus: BrowserFocus,
@@ -54,7 +54,7 @@ impl Browser {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
-            filtered_items: Vec::new(),
+            filtered_indices: Vec::new(),
             selected: 0,
             search_query: String::new(),
             focus: BrowserFocus::Files, // Start with files focused
@@ -217,42 +217,47 @@ impl Browser {
 
     fn filter_items(&mut self) {
         if self.search_query.is_empty() {
-            self.filtered_items = self.items.iter().map(|item| (item.clone(), None)).collect();
+            // No search - show all items by index
+            self.filtered_indices = (0..self.items.len()).map(|idx| (idx, None)).collect();
         } else {
             let parsed_query = parse_search_query(&self.search_query);
 
             // Score each item and find matching context
-            let mut scored_items: Vec<(AudioFile, i64, Option<String>)> = self
+            let mut scored_items: Vec<(usize, i64, Option<String>)> = self
                 .items
                 .iter()
-                .filter_map(|item| score_item_with_query(item, &parsed_query))
+                .enumerate()
+                .filter_map(|(idx, item)| {
+                    score_item_with_query(item, &parsed_query)
+                        .map(|(_, score, context)| (idx, score, context))
+                })
                 .collect();
 
             // Sort by score (highest first)
             scored_items.sort_by(|a, b| b.1.cmp(&a.1));
 
-            self.filtered_items = scored_items
+            self.filtered_indices = scored_items
                 .into_iter()
-                .map(|(item, _, context)| (item, context))
+                .map(|(idx, _, context)| (idx, context))
                 .collect();
         }
 
         // Reset selection if out of bounds
-        if self.selected >= self.filtered_items.len() {
+        if self.selected >= self.filtered_indices.len() {
             self.selected = 0;
         }
     }
 
     pub fn select_next(&mut self) {
-        if !self.filtered_items.is_empty() {
-            self.selected = (self.selected + 1) % self.filtered_items.len();
+        if !self.filtered_indices.is_empty() {
+            self.selected = (self.selected + 1) % self.filtered_indices.len();
         }
     }
 
     pub fn select_previous(&mut self) {
-        if !self.filtered_items.is_empty() {
+        if !self.filtered_indices.is_empty() {
             if self.selected == 0 {
-                self.selected = self.filtered_items.len() - 1;
+                self.selected = self.filtered_indices.len() - 1;
             } else {
                 self.selected -= 1;
             }
@@ -260,9 +265,17 @@ impl Browser {
     }
 
     pub fn get_selected_path(&self) -> Option<&Path> {
-        self.filtered_items
+        self.filtered_indices
             .get(self.selected)
-            .map(|(item, _)| item.audio_path.as_path())
+            .and_then(|(idx, _)| self.items.get(*idx))
+            .map(|item| item.audio_path.as_path())
+    }
+
+    pub fn get_filtered_items(&self) -> Vec<(&AudioFile, &Option<String>)> {
+        self.filtered_indices
+            .iter()
+            .filter_map(|(idx, context)| self.items.get(*idx).map(|item| (item, context)))
+            .collect()
     }
 }
 
@@ -516,7 +529,7 @@ mod tests {
     fn test_new_browser() {
         let browser = create_test_browser();
         assert!(browser.items.is_empty());
-        assert!(browser.filtered_items.is_empty());
+        assert!(browser.filtered_indices.is_empty());
         assert_eq!(browser.selected, 0);
         assert!(browser.search_query.is_empty());
     }
@@ -550,11 +563,12 @@ mod tests {
     #[test]
     fn test_navigation() {
         let mut browser = create_test_browser();
-        browser.filtered_items = vec![
-            (create_test_audio_file("1.wav"), None),
-            (create_test_audio_file("2.wav"), None),
-            (create_test_audio_file("3.wav"), None),
+        browser.items = vec![
+            create_test_audio_file("1.wav"),
+            create_test_audio_file("2.wav"),
+            create_test_audio_file("3.wav"),
         ];
+        browser.filtered_indices = vec![(0, None), (1, None), (2, None)];
 
         assert_eq!(browser.selected, 0);
 
@@ -578,10 +592,11 @@ mod tests {
     #[test]
     fn test_get_selected_path() {
         let mut browser = create_test_browser();
-        browser.filtered_items = vec![
-            (create_test_audio_file("/path/to/1.wav"), None),
-            (create_test_audio_file("/path/to/2.wav"), None),
+        browser.items = vec![
+            create_test_audio_file("/path/to/1.wav"),
+            create_test_audio_file("/path/to/2.wav"),
         ];
+        browser.filtered_indices = vec![(0, None), (1, None)];
 
         assert_eq!(
             browser.get_selected_path(),
@@ -594,7 +609,7 @@ mod tests {
             Some(Path::new("/path/to/2.wav"))
         );
 
-        browser.filtered_items.clear();
+        browser.filtered_indices.clear();
         assert!(browser.get_selected_path().is_none());
     }
 
@@ -683,8 +698,8 @@ Some description here.
 
         browser.filter_items();
 
-        assert_eq!(browser.filtered_items.len(), 2);
-        assert!(browser.filtered_items[0].1.is_none()); // No context for empty query
+        assert_eq!(browser.filtered_indices.len(), 2);
+        assert!(browser.filtered_indices[0].1.is_none()); // No context for empty query
     }
 
     #[test]
@@ -702,9 +717,10 @@ Some description here.
 
         browser.filter_items();
 
-        assert_eq!(browser.filtered_items.len(), 1);
+        assert_eq!(browser.filtered_indices.len(), 1);
+        let filtered_items = browser.get_filtered_items();
         assert_eq!(
-            browser.filtered_items[0].0.audio_path.to_str().unwrap(),
+            filtered_items[0].0.audio_path.to_str().unwrap(),
             "ambient.wav"
         );
     }

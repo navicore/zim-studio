@@ -15,8 +15,8 @@
 //! in the terminal and want a fast, keyboard-driven workflow for managing and
 //! auditioning audio files.
 
-use clap::{CommandFactory, Parser, Subcommand, builder::PossibleValuesParser};
-use clap_complete::{Generator, Shell, generate};
+use clap::{builder::PossibleValuesParser, CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Generator, Shell};
 use std::error::Error;
 use std::io;
 

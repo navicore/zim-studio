@@ -605,11 +605,11 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
         .split(area);
 
     // File list
-    let files: Vec<Line> = browser
-        .filtered_items
+    let filtered_items = browser.get_filtered_items();
+    let files: Vec<Line> = filtered_items
         .iter()
         .enumerate()
-        .map(|(i, item)| {
+        .map(|(i, (item, _))| {
             let style = if i == browser.selected {
                 Style::default().bg(Color::Blue).fg(Color::White)
             } else {
@@ -618,7 +618,6 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
 
             let prefix = if i == browser.selected { "> " } else { "  " };
             let filename = item
-                .0
                 .audio_path
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -658,26 +657,26 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
     let usable_height = preview_area.height.saturating_sub(2) as usize; // Subtract border height
     let max_chars = usable_width * usable_height; // Maximum characters that can fit
 
-    let preview_content =
-        if let Some((item, context)) = browser.filtered_items.get(browser.selected) {
-            context.clone().unwrap_or_else(|| {
-                if !item.metadata.content.is_empty() {
-                    // Use a reasonable default (2000 chars) or the calculated max, whichever is smaller
-                    // This prevents showing too much text on very large terminals
-                    let limit = max_chars.min(2000);
-                    let content: String = item.metadata.content.chars().take(limit).collect();
-                    if item.metadata.content.len() > limit {
-                        content + "..."
-                    } else {
-                        content
-                    }
+    let preview_content = if browser.selected < filtered_items.len() {
+        let (item, context) = filtered_items[browser.selected];
+        context.clone().unwrap_or_else(|| {
+            if !item.metadata.content.is_empty() {
+                // Use a reasonable default (2000 chars) or the calculated max, whichever is smaller
+                // This prevents showing too much text on very large terminals
+                let limit = max_chars.min(2000);
+                let content: String = item.metadata.content.chars().take(limit).collect();
+                if item.metadata.content.len() > limit {
+                    content + "..."
                 } else {
-                    "No preview available".to_string()
+                    content
                 }
-            })
-        } else {
-            "No preview available".to_string()
-        };
+            } else {
+                "No preview available".to_string()
+            }
+        })
+    } else {
+        "No preview available".to_string()
+    };
 
     let preview = Paragraph::new(preview_content)
         .block(Block::default().borders(Borders::ALL).title("Preview"))
