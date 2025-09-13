@@ -622,7 +622,15 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("Unknown");
-            Line::from(format!("{prefix}{filename}")).style(style)
+
+            // Include project name if available
+            let display_text = if let Some(ref project) = item.0.metadata.project {
+                format!("{prefix}{filename} [{project}]")
+            } else {
+                format!("{prefix}{filename}")
+            };
+
+            Line::from(display_text).style(style)
         })
         .collect();
 
@@ -678,8 +686,19 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
         "No preview available".to_string()
     };
 
+    // Build preview title with project name if available
+    let preview_title = if let Some((item, _)) = browser.filtered_items.get(browser.selected) {
+        if let Some(ref project) = item.metadata.project {
+            format!("Preview - Project: {project}")
+        } else {
+            "Preview".to_string()
+        }
+    } else {
+        "Preview".to_string()
+    };
+
     let preview = Paragraph::new(preview_content)
-        .block(Block::default().borders(Borders::ALL).title("Preview"))
+        .block(Block::default().borders(Borders::ALL).title(preview_title))
         .wrap(ratatui::widgets::Wrap { trim: true });
 
     f.render_widget(preview, chunks[1]);

@@ -65,6 +65,9 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     let skipped_count = Arc::new(Mutex::new(0));
     let updated_count = Arc::new(Mutex::new(0));
 
+    // Create project root cache for performance
+    let project_cache = Arc::new(Mutex::new(HashMap::<PathBuf, Option<String>>::new()));
+
     let multi = MultiProgress::new();
     let pb = multi.add(create_progress_bar(total_files as u64));
     pb.set_message("Processing audio files...");
@@ -78,6 +81,7 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
         &skipped_count,
         &updated_count,
         &pb,
+        &project_cache,
     )?;
 
     pb.finish_with_message("Done");
@@ -131,6 +135,10 @@ fn count_audio_files(
     Ok(count)
 }
 
+#[allow(clippy::too_many_arguments)]
+// TODO: Consider parallelizing directory scanning for large projects
+// This could be implemented using rayon or a thread pool in a future PR
+// to improve performance when processing directories with many files
 fn scan_directory(
     dir: &Path,
     audio_exts: &HashSet<&str>,
@@ -139,6 +147,7 @@ fn scan_directory(
     skipped: &Arc<Mutex<u32>>,
     updated: &Arc<Mutex<u32>>,
     pb: &ProgressBar,
+    project_cache: &Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
 ) -> Result<(), Box<dyn Error>> {
     let entries = fs::read_dir(dir)?;
 
@@ -164,14 +173,23 @@ fn scan_directory(
             }
 
             // Recurse into subdirectory
-            scan_directory(&path, audio_exts, zimignore, created, skipped, updated, pb)?;
+            scan_directory(
+                &path,
+                audio_exts,
+                zimignore,
+                created,
+                skipped,
+                updated,
+                pb,
+                project_cache,
+            )?;
         } else if path.is_file() {
             // Check if this is an audio file
             if let Some(extension) = path.extension() {
                 let ext = extension.to_string_lossy().to_lowercase();
 
                 if audio_exts.contains(ext.as_str()) {
-                    process_media_file(&path, created, skipped, updated, pb)?;
+                    process_media_file(&path, created, skipped, updated, pb, project_cache)?;
                     pb.inc(1);
                 }
             }
@@ -181,12 +199,179 @@ fn scan_directory(
     Ok(())
 }
 
+/// Maximum depth to traverse when looking for project root
+const MAX_PROJECT_TRAVERSAL_DEPTH: usize = 10;
+
+/// Find the project root by looking for the nearest .zimignore file
+///
+/// # Example
+/// ```
+/// // Given a file at: /home/user/projects/my-song/mixes/final.wav
+/// // With .zimignore at: /home/user/projects/my-song/.zimignore
+/// // Returns: Some("my-song")
+/// ```
+fn find_project_root(file_path: &Path) -> Option<String> {
+    // Start from the file's parent directory
+    let mut current = file_path.parent();
+    let mut depth = 0;
+
+    while let Some(dir) = current {
+        // Prevent excessive traversal
+        if depth >= MAX_PROJECT_TRAVERSAL_DEPTH {
+            // Reached maximum depth, stop searching to prevent infinite loops
+            break;
+        }
+        depth += 1;
+
+        let zimignore_path = dir.join(".zimignore");
+        if zimignore_path.exists() {
+            // Found a project root - return its directory name
+            // If this is the current working directory ("."), get the actual directory name
+            if dir == Path::new(".") {
+                // Get the absolute path to get the real directory name
+                if let Ok(abs_path) = std::env::current_dir() {
+                    return abs_path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|s| s.to_string());
+                }
+            }
+
+            return dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|s| s.to_string());
+        }
+        current = dir.parent();
+    }
+
+    None
+}
+
+/// Extract a clean title from a filename by removing the extension
+fn extract_title_from_filename(filename: &str) -> String {
+    // Remove extension(s) - handles cases like "my.song.wav"
+    if let Some(dot_pos) = filename.rfind('.') {
+        filename[..dot_pos].to_string()
+    } else {
+        filename.to_string()
+    }
+}
+
+/// Determine the file type based on its directory within the project
+/// Returns (singular_type, tag) e.g., ("edit", "edit") or ("source", "source")
+fn determine_file_type(file_path: &Path) -> Option<(String, String)> {
+    // Get the path components
+    let components: Vec<&str> = file_path
+        .components()
+        .filter_map(|c| {
+            if let std::path::Component::Normal(s) = c {
+                s.to_str()
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Look for known audio directories in the path
+    // Start from the first directory after the project root and look for known patterns
+    for component in components.iter().rev().skip(1) {
+        // Skip the filename itself
+        let dir = component.to_lowercase();
+
+        // Map directory names to their singular forms and tags
+        let (singular, tag) = match dir.as_str() {
+            "mixes" => ("mix", "mix"),
+            "mix" => ("mix", "mix"),
+            "edits" => ("edit", "edit"),
+            "edit" => ("edit", "edit"),
+            "sources" => ("source", "source"),
+            "source" => ("source", "source"),
+            "recordings" => ("recording", "recording"),
+            "recording" => ("recording", "recording"),
+            "samples" => ("sample", "sample"),
+            "sample" => ("sample", "sample"),
+            "stems" => ("stem", "stem"),
+            "stem" => ("stem", "stem"),
+            "bounced" => ("bounce", "bounce"),
+            "bounce" => ("bounce", "bounce"),
+            "renders" => ("render", "render"),
+            "render" => ("render", "render"),
+            "masters" => ("master", "master"),
+            "master" => ("master", "master"),
+            "demos" => ("demo", "demo"),
+            "demo" => ("demo", "demo"),
+            "drafts" => ("draft", "draft"),
+            "draft" => ("draft", "draft"),
+            "ideas" => ("idea", "idea"),
+            "idea" => ("idea", "idea"),
+            "loops" => ("loop", "loop"),
+            "loop" => ("loop", "loop"),
+            "takes" => ("take", "take"),
+            "take" => ("take", "take"),
+            _ => {
+                // Not a known audio directory, continue searching
+                continue;
+            }
+        };
+
+        return Some((singular.to_string(), tag.to_string()));
+    }
+
+    None
+}
+
+/// Determine whether to use "a" or "an" based on the word
+///
+/// # Example
+/// ```
+/// assert_eq!(get_article("edit"), "an");
+/// assert_eq!(get_article("mix"), "a");
+/// assert_eq!(get_article("source"), "a");
+/// ```
+fn get_article(word: &str) -> &'static str {
+    if word.is_empty() {
+        return "a";
+    }
+
+    // Safe handling of first character
+    let first_char = match word.chars().next() {
+        Some(c) => c.to_ascii_lowercase(),
+        None => return "a",
+    };
+
+    // Check for vowel sounds (simplified - doesn't handle all edge cases)
+    match first_char {
+        'a' | 'e' | 'i' | 'o' | 'u' => "an",
+        // Special cases for words that start with silent 'h'
+        'h' if word.to_lowercase().starts_with("hour") => "an",
+        _ => "a",
+    }
+}
+
+/// Generate a smart description based on file type and project
+fn generate_description(file_type: Option<&str>, project: Option<&str>) -> String {
+    match (file_type, project) {
+        (Some(ft), Some(proj)) => {
+            let article = get_article(ft);
+            format!("{article} {ft} for {proj}")
+        }
+        (Some(ft), None) => {
+            let article = get_article(ft);
+            format!("{article} {ft}")
+        }
+        _ => String::new(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn process_media_file(
     file_path: &Path,
     created: &Arc<Mutex<u32>>,
     skipped: &Arc<Mutex<u32>>,
     updated: &Arc<Mutex<u32>>,
     pb: &ProgressBar,
+    project_cache: &Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
 ) -> Result<(), Box<dyn Error>> {
     let sidecar_path = get_sidecar_path(file_path);
 
@@ -224,12 +409,23 @@ fn process_media_file(
     // Get file system metadata
     let (file_size, modified) = extract_file_metadata(file_path)?;
 
+    // Find the project name (with caching)
+    let project_name = {
+        let mut cache = project_cache.lock().unwrap();
+        let parent = file_path.parent().unwrap_or(Path::new("."));
+        cache
+            .entry(parent.to_path_buf())
+            .or_insert_with(|| find_project_root(file_path))
+            .clone()
+    };
+
     let content = generate_sidecar_content(
         file_path,
         &file_name,
         &relative_path.to_string_lossy(),
         file_size,
         modified.as_deref(),
+        project_name.as_deref(),
     );
 
     fs::write(&sidecar_path, content)?;
@@ -316,13 +512,31 @@ fn extract_file_metadata(path: &Path) -> Result<(u64, Option<String>), Box<dyn E
     Ok((file_size, modified))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_sidecar_content(
     file_path: &Path,
     file_name: &str,
     relative_path: &str,
     file_size: u64,
     modified: Option<&str>,
+    project: Option<&str>,
 ) -> String {
+    // Calculate smart defaults
+    let title = extract_title_from_filename(file_name);
+    let file_type_info = determine_file_type(Path::new(relative_path));
+    let (file_type, tag) = file_type_info
+        .as_ref()
+        .map(|(t, tag)| (t.as_str(), tag.as_str()))
+        .unwrap_or(("", ""));
+    let description = generate_description(Some(file_type).filter(|s| !s.is_empty()), project);
+
+    // Create tags list with the file type tag if available
+    let tags = if !tag.is_empty() {
+        vec![tag.to_string()]
+    } else {
+        vec![]
+    };
+
     let extension = file_path
         .extension()
         .and_then(|e| e.to_str())
@@ -336,12 +550,16 @@ fn generate_sidecar_content(
                     templates::generate_audio_sidecar_with_metadata(&SidecarMetadata {
                         file_name,
                         file_path: relative_path,
+                        title: &title,
+                        description: &description,
+                        tags: &tags,
                         sample_rate: metadata.sample_rate,
                         channels: metadata.channels,
                         bits_per_sample: metadata.bits_per_sample,
                         duration_seconds: metadata.duration_seconds,
                         file_size,
                         modified,
+                        project,
                     })
                 }
                 Err(e) => {
@@ -354,8 +572,12 @@ fn generate_sidecar_content(
                     templates::generate_minimal_sidecar_with_fs_metadata(
                         file_name,
                         relative_path,
+                        &title,
+                        &description,
+                        &tags,
                         file_size,
                         modified,
+                        project,
                     )
                 }
             }
@@ -365,8 +587,12 @@ fn generate_sidecar_content(
             templates::generate_minimal_sidecar_with_fs_metadata(
                 file_name,
                 relative_path,
+                &title,
+                &description,
+                &tags,
                 file_size,
                 modified,
+                project,
             )
         }
     }
@@ -748,5 +974,133 @@ mod tests {
         // Verify content unchanged
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "test content");
+    }
+
+    #[test]
+    fn test_extract_title_from_filename() {
+        assert_eq!(extract_title_from_filename("song.wav"), "song");
+        assert_eq!(
+            extract_title_from_filename("my.great.song.flac"),
+            "my.great.song"
+        );
+        assert_eq!(
+            extract_title_from_filename("Final_Mix_v2.wav"),
+            "Final_Mix_v2"
+        );
+        assert_eq!(extract_title_from_filename("no_extension"), "no_extension");
+        assert_eq!(extract_title_from_filename(""), "");
+    }
+
+    #[test]
+    fn test_get_article() {
+        // Vowel starts
+        assert_eq!(get_article("edit"), "an");
+        assert_eq!(get_article("idea"), "an");
+        assert_eq!(get_article("audio"), "an");
+        assert_eq!(get_article("outro"), "an");
+        assert_eq!(get_article("underwater"), "an");
+
+        // Consonant starts
+        assert_eq!(get_article("mix"), "a");
+        assert_eq!(get_article("source"), "a");
+        assert_eq!(get_article("demo"), "a");
+        assert_eq!(get_article("sample"), "a");
+
+        // Edge cases
+        assert_eq!(get_article(""), "a");
+        assert_eq!(get_article("hour"), "an"); // Silent h
+        assert_eq!(get_article("house"), "a"); // Pronounced h
+
+        // Unicode handling
+        assert_eq!(get_article("émigré"), "a"); // Non-ASCII
+    }
+
+    #[test]
+    fn test_determine_file_type() {
+        use std::path::PathBuf;
+
+        // Standard audio directories
+        assert_eq!(
+            determine_file_type(&PathBuf::from("mixes/final.wav")),
+            Some(("mix".to_string(), "mix".to_string()))
+        );
+        assert_eq!(
+            determine_file_type(&PathBuf::from("edits/intro.wav")),
+            Some(("edit".to_string(), "edit".to_string()))
+        );
+        assert_eq!(
+            determine_file_type(&PathBuf::from("sources/guitar.wav")),
+            Some(("source".to_string(), "source".to_string()))
+        );
+        assert_eq!(
+            determine_file_type(&PathBuf::from("samples/kick.wav")),
+            Some(("sample".to_string(), "sample".to_string()))
+        );
+
+        // Nested directories should find the audio directory
+        assert_eq!(
+            determine_file_type(&PathBuf::from("sources/day1/guitar.wav")),
+            Some(("source".to_string(), "source".to_string()))
+        );
+        assert_eq!(
+            determine_file_type(&PathBuf::from("mixes/old/2024/final.wav")),
+            Some(("mix".to_string(), "mix".to_string()))
+        );
+
+        // Non-audio directories
+        assert_eq!(determine_file_type(&PathBuf::from("random/file.wav")), None);
+        assert_eq!(determine_file_type(&PathBuf::from("file.wav")), None);
+
+        // Project with multiple levels
+        assert_eq!(
+            determine_file_type(&PathBuf::from("project/stems/drums.wav")),
+            Some(("stem".to_string(), "stem".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_generate_description() {
+        assert_eq!(
+            generate_description(Some("mix"), Some("my-project")),
+            "a mix for my-project"
+        );
+        assert_eq!(
+            generate_description(Some("edit"), Some("cool-song")),
+            "an edit for cool-song"
+        );
+        assert_eq!(generate_description(Some("source"), None), "a source");
+        assert_eq!(generate_description(None, Some("project")), "");
+        assert_eq!(generate_description(None, None), "");
+    }
+
+    #[test]
+    fn test_find_project_root() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create a temporary directory structure
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().join("my-project");
+        let mixes_dir = project_dir.join("mixes");
+        let nested_dir = mixes_dir.join("old");
+
+        fs::create_dir_all(&nested_dir).unwrap();
+        fs::write(project_dir.join(".zimignore"), "# test").unwrap();
+
+        let file_path = nested_dir.join("test.wav");
+        fs::write(&file_path, "").unwrap();
+
+        // Test finding project root
+        let result = find_project_root(&file_path);
+        assert_eq!(result, Some("my-project".to_string()));
+
+        // Test with no .zimignore
+        let orphan_dir = temp_dir.path().join("orphan");
+        fs::create_dir_all(&orphan_dir).unwrap();
+        let orphan_file = orphan_dir.join("test.wav");
+        fs::write(&orphan_file, "").unwrap();
+
+        let result = find_project_root(&orphan_file);
+        assert_eq!(result, None);
     }
 }

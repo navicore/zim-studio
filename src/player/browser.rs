@@ -36,6 +36,7 @@ pub struct AudioFile {
 #[derive(Clone, Default)]
 pub struct FileMetadata {
     pub title: String,
+    pub project: Option<String>,
     pub tags: Vec<String>,
     pub content: String, // Full markdown content for searching
 }
@@ -460,6 +461,13 @@ fn parse_sidecar_content(content: &str) -> FileMetadata {
                             // Remove quotes if present
                             metadata.title = value.trim_matches('"').to_string();
                         }
+                        "project" => {
+                            // Remove quotes if present
+                            let project_value = value.trim_matches('"');
+                            if project_value != "unknown" && !project_value.is_empty() {
+                                metadata.project = Some(project_value.to_string());
+                            }
+                        }
                         "tags" => {
                             // Parse array format: ["tag1", "tag2"] or []
                             if value.starts_with('[') && value.ends_with(']') {
@@ -519,6 +527,7 @@ mod tests {
             sidecar_path: None,
             metadata: FileMetadata {
                 title: "Test Title".to_string(),
+                project: Some("test-project".to_string()),
                 tags: vec!["tag1".to_string(), "tag2".to_string()],
                 content: "Test content for searching".to_string(),
             },
