@@ -171,8 +171,9 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
             " loop  "
         }),
         create_control_button("s", Style::default().fg(Color::Cyan)),
-        Span::raw(" save"),
-        Span::raw("  "),
+        Span::raw(" save  "),
+        create_control_button("e", Style::default().fg(Color::Magenta)),
+        Span::raw(" edit  "),
         create_control_button("t", Style::default().fg(Color::Yellow)),
         Span::raw(if app.telemetry.config().enabled {
             " telemetry ●"
@@ -193,6 +194,19 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
 }
 
 fn draw_file_info_with_leds(f: &mut Frame, area: Rect, app: &App) {
+    // Show editor message if present
+    if let Some(ref message) = app.editor_message {
+        let msg_style = Style::default()
+            .fg(Color::Yellow)
+            .bg(Color::Black)
+            .add_modifier(Modifier::ITALIC);
+        let msg = Paragraph::new(message.as_str())
+            .style(msg_style)
+            .alignment(Alignment::Center);
+        f.render_widget(msg, area);
+        return;
+    }
+
     // Split area horizontally for file info and LEDs
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -507,33 +521,49 @@ fn draw_progress_with_marks(f: &mut Frame, area: Rect, app: &App) {
 fn draw_integrated_browser(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    // Layout: Search bar, file list with preview, mini player, help
+    // Layout: file list with preview, mini player, help (no search bar by default)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1) // Add margin around the entire layout
+        .margin(1)
         .constraints([
-            Constraint::Length(3), // Search bar
             Constraint::Min(10),   // File browser
             Constraint::Length(1), // Mini player - just one line
             Constraint::Length(1), // Help hint
         ])
         .split(size);
 
-    // Draw search bar
-    draw_browser_search_bar(f, chunks[0], &app.browser);
-
     // Draw file browser with preview
-    draw_browser_content(f, chunks[1], &app.browser);
+    draw_browser_content(f, chunks[0], &app.browser);
 
     // Draw mini player
-    draw_mini_player(f, chunks[2], app);
+    draw_mini_player(f, chunks[1], app);
 
     // Draw help hint
-    draw_browser_help(f, chunks[3], &app.browser);
+    draw_browser_help(f, chunks[2], &app.browser);
+
+    // Draw floating search bar if visible (overlay on top)
+    if app.browser.search_visible {
+        draw_floating_search_bar(f, size, &app.browser);
+    }
 }
 
-fn draw_browser_search_bar(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
-    use super::browser::BrowserFocus;
+fn draw_floating_search_bar(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
+    // Calculate floating position - centered horizontally, near top
+    let width = area.width.min(60); // Max width of 60 chars
+    let height = 3;
+    let x = (area.width.saturating_sub(width)) / 2;
+    let y = 2; // Near the top
+
+    let search_area = Rect {
+        x: area.x + x,
+        y: area.y + y,
+        width,
+        height,
+    };
+
+    // Clear the background area first with a block
+    let clear_block = Block::default().style(Style::default().bg(Color::Black));
+    f.render_widget(clear_block, search_area);
 
     let search_text = if browser.search_query.is_empty() {
         "Type to search or use 'title:' or 'tag:'...".to_string()
@@ -541,32 +571,25 @@ fn draw_browser_search_bar(f: &mut Frame, area: Rect, browser: &super::browser::
         browser.search_query.clone()
     };
 
-    let title = if browser.focus == BrowserFocus::Search {
-        "Search (Active) - Tab to switch"
-    } else {
-        "Search - Tab to switch"
-    };
+    let title = "Search (Enter or Esc to close)";
 
-    let border_style = if browser.focus == BrowserFocus::Search {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let border_style = Style::default().fg(Color::Yellow).bg(Color::Black);
 
     let search = Paragraph::new(search_text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(title)
-                .border_style(border_style),
+                .border_style(border_style)
+                .style(Style::default().bg(Color::Black)),
         )
         .style(if browser.search_query.is_empty() {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::DarkGray).bg(Color::Black)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(Color::White).bg(Color::Black)
         });
 
-    f.render_widget(search, area);
+    f.render_widget(search, search_area);
 }
 
 fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
@@ -604,10 +627,10 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
         })
         .collect();
 
-    let title = if browser.focus == BrowserFocus::Files {
-        "Files (Active) - j/k to navigate, Enter to select"
+    let title = if browser.search_visible && browser.focus == BrowserFocus::Search {
+        "Files - Press Esc to return"
     } else {
-        "Files - Tab to switch"
+        "Files - j/k to navigate, Enter to select, / to search"
     };
 
     let border_style = if browser.focus == BrowserFocus::Files {
@@ -735,13 +758,17 @@ fn draw_mini_player(f: &mut Frame, area: Rect, app: &App) {
 fn draw_browser_help(f: &mut Frame, area: Rect, browser: &super::browser::Browser) {
     use super::browser::BrowserFocus;
 
-    let help_text = match browser.focus {
-        BrowserFocus::Search => {
-            "Type to search | Try: 'title: my song' or 'tag: ambient' | Tab: Switch to files | Esc: Back | ←→: Seek"
+    let help_text = if browser.search_visible {
+        match browser.focus {
+            BrowserFocus::Search => {
+                "Type to search | Try: 'title: my song' or 'tag: ambient' | Enter/Esc: Hide search | ←→: Seek"
+            }
+            BrowserFocus::Files => {
+                "j/k or ↑↓: Navigate | Enter: Select | /: Search | Esc: Back | Space: Play/Pause | h/l or ←→: Seek"
+            }
         }
-        BrowserFocus::Files => {
-            "j/k or ↑↓: Navigate | Enter: Select | Tab: Switch to search | Esc: Back | Space: Play/Pause | h/l or ←→: Seek"
-        }
+    } else {
+        "j/k or ↑↓: Navigate | Enter: Select | /: Search | Esc: Back | Space: Play/Pause | h/l or ←→: Seek"
     };
 
     let help_style = Style::default().fg(Color::DarkGray);
