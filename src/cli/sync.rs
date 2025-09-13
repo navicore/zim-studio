@@ -1,7 +1,8 @@
 use crate::media::metadata::read_audio_metadata;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
-use std::collections::HashSet;
+use serde_yaml;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -107,6 +108,9 @@ fn find_files_to_sync(
     Ok(files_to_sync)
 }
 
+// TODO: Consider parallelizing directory scanning for large projects
+// Similar to the update command, this could benefit from parallel processing
+// using rayon or a thread pool to improve performance on large directory trees
 fn scan_for_sync(
     dir: &Path,
     audio_exts: &HashSet<&str>,
@@ -215,115 +219,47 @@ fn update_yaml_fields(
     let yaml_section = &content[4..frontmatter_end - 5]; // Extract YAML content
     let markdown_section = &content[frontmatter_end..];
 
-    // Parse YAML line by line and update specific fields
-    let mut updated_lines = Vec::new();
-    let mut seen_fields = HashSet::new();
+    // Parse YAML using serde_yaml for robust parsing
+    let mut yaml_data: HashMap<String, serde_yaml::Value> = serde_yaml::from_str(yaml_section)?;
 
-    for line in yaml_section.lines() {
-        let trimmed = line.trim_start();
-
-        // Check if this is a field we want to update
-        if let Some((key, _)) = parse_yaml_field(trimmed) {
-            match key {
-                "duration" => {
-                    seen_fields.insert("duration");
-                    if let Some(meta) = audio_metadata {
-                        if let Some(duration) = meta.duration_seconds {
-                            updated_lines.push(format!("duration: {duration:.2}"));
-                        } else {
-                            updated_lines.push("duration: unknown".to_string());
-                        }
-                    } else {
-                        updated_lines.push(line.to_string());
-                    }
-                }
-                "sample_rate" => {
-                    seen_fields.insert("sample_rate");
-                    if let Some(meta) = audio_metadata {
-                        updated_lines.push(format!("sample_rate: {}", meta.sample_rate));
-                    } else {
-                        updated_lines.push(line.to_string());
-                    }
-                }
-                "channels" => {
-                    seen_fields.insert("channels");
-                    if let Some(meta) = audio_metadata {
-                        updated_lines.push(format!("channels: {}", meta.channels));
-                    } else {
-                        updated_lines.push(line.to_string());
-                    }
-                }
-                "bit_depth" => {
-                    seen_fields.insert("bit_depth");
-                    if let Some(meta) = audio_metadata {
-                        updated_lines.push(format!("bit_depth: {}", meta.bits_per_sample));
-                    } else {
-                        updated_lines.push(line.to_string());
-                    }
-                }
-                "file_size" => {
-                    seen_fields.insert("file_size");
-                    updated_lines.push(format!("file_size: {file_size}"));
-                }
-                "modified" => {
-                    seen_fields.insert("modified");
-                    let mod_str = modified.unwrap_or("unknown");
-                    updated_lines.push(format!("modified: \"{mod_str}\""));
-                }
-                _ => {
-                    // Keep other fields as-is
-                    updated_lines.push(line.to_string());
-                }
-            }
-        } else {
-            // Not a field line, keep as-is
-            updated_lines.push(line.to_string());
+    // Update technical fields with new values
+    if let Some(meta) = audio_metadata {
+        if let Some(duration) = meta.duration_seconds {
+            yaml_data.insert(
+                "duration".to_string(),
+                serde_yaml::Value::Number(serde_yaml::Number::from(duration)),
+            );
         }
+        yaml_data.insert(
+            "sample_rate".to_string(),
+            serde_yaml::Value::Number(meta.sample_rate.into()),
+        );
+        yaml_data.insert(
+            "channels".to_string(),
+            serde_yaml::Value::Number(meta.channels.into()),
+        );
+        yaml_data.insert(
+            "bit_depth".to_string(),
+            serde_yaml::Value::Number(meta.bits_per_sample.into()),
+        );
     }
 
-    // Add any missing fields (in case they weren't in the original)
-    if !seen_fields.contains("duration")
-        && let Some(meta) = audio_metadata
-        && let Some(duration) = meta.duration_seconds
-    {
-        updated_lines.push(format!("duration: {duration:.2}"));
-    }
-    if !seen_fields.contains("sample_rate")
-        && let Some(meta) = audio_metadata
-    {
-        updated_lines.push(format!("sample_rate: {}", meta.sample_rate));
-    }
-    if !seen_fields.contains("channels")
-        && let Some(meta) = audio_metadata
-    {
-        updated_lines.push(format!("channels: {}", meta.channels));
-    }
-    if !seen_fields.contains("bit_depth")
-        && let Some(meta) = audio_metadata
-    {
-        updated_lines.push(format!("bit_depth: {}", meta.bits_per_sample));
-    }
-    if !seen_fields.contains("file_size") {
-        updated_lines.push(format!("file_size: {file_size}"));
-    }
-    if !seen_fields.contains("modified") {
-        let mod_str = modified.unwrap_or("unknown");
-        updated_lines.push(format!("modified: \"{mod_str}\""));
-    }
+    // Always update file_size and modified
+    yaml_data.insert(
+        "file_size".to_string(),
+        serde_yaml::Value::Number(file_size.into()),
+    );
 
-    // Reconstruct the content
-    let updated_yaml = updated_lines.join("\n");
-    Ok(format!("---\n{updated_yaml}\n---\n{markdown_section}"))
-}
+    yaml_data.insert(
+        "modified".to_string(),
+        serde_yaml::Value::String(modified.unwrap_or("unknown").to_string()),
+    );
 
-fn parse_yaml_field(line: &str) -> Option<(&str, &str)> {
-    if let Some(colon_pos) = line.find(':') {
-        let key = line[..colon_pos].trim();
-        let value = line[colon_pos + 1..].trim();
-        Some((key, value))
-    } else {
-        None
-    }
+    // Serialize back to YAML string
+    let updated_yaml = serde_yaml::to_string(&yaml_data)?;
+
+    // Reconstruct the content with updated YAML
+    Ok(format!("---\n{updated_yaml}---\n{markdown_section}"))
 }
 
 fn get_sidecar_path(media_path: &Path) -> PathBuf {

@@ -44,11 +44,11 @@ The motivation for creating `zim` is twofold:
 ## Installation
 
 ```bash
-# Install with just the project management and metadata features
+# Install with full features (includes audio player)
 cargo install zim-studio
 
-# Install with the audio player feature included
-cargo install zim-studio --features player
+# Install minimal version without audio player (scaffold and metadata only)
+cargo install zim-studio --no-default-features
 ```
 
 If you use neovim (untested with regular vim) you may want to try the

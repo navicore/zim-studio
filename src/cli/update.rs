@@ -136,6 +136,9 @@ fn count_audio_files(
 }
 
 #[allow(clippy::too_many_arguments)]
+// TODO: Consider parallelizing directory scanning for large projects
+// This could be implemented using rayon or a thread pool in a future PR
+// to improve performance when processing directories with many files
 fn scan_directory(
     dir: &Path,
     audio_exts: &HashSet<&str>,
