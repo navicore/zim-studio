@@ -82,6 +82,12 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Sync technical metadata in sidecar files with current audio file properties
+    Sync {
+        /// Path to project (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: String,
+    },
     /// Play audio files with integrated player (supports mixing up to 3 files)
     Play {
         /// Audio file paths (up to 3 files for mixing)
@@ -169,6 +175,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Lint { path } => {
             cli::lint::handle_lint(&path)?;
+        }
+        Commands::Sync { path } => {
+            cli::sync::handle_sync(&path)?;
         }
         Commands::Play {
             files,
