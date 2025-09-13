@@ -36,7 +36,7 @@ simplelog = { version = "0.12", optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
-default = []
+default = ["player"]
 player = ["ratatui", "crossterm", "rodio", "hound", "claxon", "fuzzy-matcher", "log", "simplelog", "serde_json"]
 
 [dev-dependencies]
