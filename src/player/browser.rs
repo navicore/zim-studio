@@ -46,6 +46,7 @@ pub struct Browser {
     pub selected: usize,
     pub search_query: String,
     pub focus: BrowserFocus,
+    pub search_visible: bool, // Whether search box is shown
     zimignore: ZimIgnore,
 }
 
@@ -56,7 +57,8 @@ impl Browser {
             filtered_items: Vec::new(),
             selected: 0,
             search_query: String::new(),
-            focus: BrowserFocus::Search,
+            focus: BrowserFocus::Files, // Start with files focused
+            search_visible: false,      // Start with search hidden
             zimignore: ZimIgnore::new(),
         }
     }
@@ -196,6 +198,16 @@ impl Browser {
             BrowserFocus::Search => BrowserFocus::Files,
             BrowserFocus::Files => BrowserFocus::Search,
         };
+    }
+
+    pub fn show_search(&mut self) {
+        self.search_visible = true;
+        self.focus = BrowserFocus::Search;
+    }
+
+    pub fn hide_search(&mut self) {
+        self.search_visible = false;
+        self.focus = BrowserFocus::Files;
     }
 
     pub fn clear_search(&mut self) {

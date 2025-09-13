@@ -1036,11 +1036,19 @@ fn handle_integrated_browser_keys(
     // Universal keys that work regardless of focus
     match key.code {
         KeyCode::Esc => {
-            app.view_mode = ViewMode::Player;
+            // If search is visible, hide it first. Otherwise exit browser
+            if app.browser.search_visible {
+                app.browser.hide_search();
+            } else {
+                app.view_mode = ViewMode::Player;
+            }
             return Ok(());
         }
         KeyCode::Tab => {
-            app.browser.toggle_focus();
+            // Only allow tab if search is visible
+            if app.browser.search_visible {
+                app.browser.toggle_focus();
+            }
             return Ok(());
         }
         KeyCode::Left => {
@@ -1071,6 +1079,10 @@ fn handle_integrated_browser_keys(
     // Focus-specific keys
     match app.browser.focus {
         BrowserFocus::Search => match key.code {
+            KeyCode::Enter => {
+                // Enter closes search and returns to file list
+                app.browser.hide_search();
+            }
             KeyCode::Backspace => app.browser.pop_char(),
             KeyCode::Char('c' | 'k') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 app.browser.clear_search(); // Ctrl+C or Ctrl+K to clear search
@@ -1089,6 +1101,10 @@ fn handle_integrated_browser_keys(
                     app.browser.select_next();
                     // Auto-load the selected file for preview
                     preview_selected_file(app)?;
+                }
+                KeyCode::Char('/') => {
+                    // Show search box when / is pressed in file list
+                    app.browser.show_search();
                 }
                 KeyCode::Char('h') => {
                     // Seek backward
@@ -1207,13 +1223,13 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
         KeyCode::Char(' ') => app.toggle_playback(),
         KeyCode::Char('b') => {
             app.view_mode = ViewMode::Browser;
-            app.browser.focus = super::browser::BrowserFocus::Files;
+            app.browser.hide_search(); // Ensure search is hidden when opening browser
             // Initialize browser with current directory
             app.browser.scan_directory(std::path::Path::new("."))?;
         }
         KeyCode::Char('/') => {
             app.view_mode = ViewMode::Browser;
-            app.browser.focus = super::browser::BrowserFocus::Search;
+            app.browser.hide_search(); // Start with search hidden, user can press '/' again to search
             // Initialize browser with current directory (preserves existing search)
             app.browser.scan_directory(std::path::Path::new("."))?;
         }
