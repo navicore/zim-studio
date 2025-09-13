@@ -111,9 +111,29 @@ my_greatest_hits/
 `zim update` generates a `.md` sidecar for each audio file with:
 - **YAML frontmatter**: Structured metadata (technical specs, tags, etc.)
 - **Markdown body**: Free-form notes, ideas, TODO lists
+- **Automatic tag inference**: Tags are automatically added based on filename patterns (e.g., files with "ES-9" get tagged "eurorack", "drum" files get tagged "drums")
 
 The YAML is designed to be both human-editable and scriptable for automation.
 See the [example sidecar](examples/sidecar-example.md) for what this looks like in practice.
+
+### Automatic Tag Inference
+
+ZIM automatically infers tags from filenames using configurable pattern mappings. Default mappings include:
+- Hardware: `ES-9` → `eurorack`, `modular` → `eurorack`
+- Instruments: `drum` → `drums`, `bass` → `bass`, `synth` → `synth`
+- Structure: `loop` → `loop`, `kick` → `drums`, `snare` → `drums`
+- Vocals: `vocal` → `vocals`, `vox` → `vocals`
+- DAWs: `ableton` → `ableton-live`, `reaper` → `reaper`
+
+To customize tag mappings, edit `~/.config/zim/config.toml`:
+```toml
+[tag_mappings]
+"ES-9" = "eurorack"
+"my-pattern" = "my-tag"
+"field-rec" = "field-recording"
+```
+
+**Note**: If you have an existing config file, the default tag mappings will still work automatically - no migration needed!
 
 ## Shell Completions
 
