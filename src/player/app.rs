@@ -617,11 +617,40 @@ impl App {
             let original_content = fs::read_to_string(&source_sidecar)?;
 
             if let Some(frontmatter_end) = original_content.find("\n---\n") {
-                // Has YAML frontmatter - update fields and insert our fields
-                let _yaml_section = &original_content[..frontmatter_end];
+                // Has YAML frontmatter - parse to extract tags
+                let yaml_section = &original_content[..frontmatter_end];
                 let markdown_section = &original_content[frontmatter_end + 5..]; // Skip "\n---\n"
 
-                // Build new YAML with correct file/path and updated fields
+                // Parse original YAML to get tags
+                let mut tags = vec!["excerpt".to_string()];
+                if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(yaml_section)
+                    && let Some(original_tags) =
+                        yaml_value.get("tags").and_then(|v| v.as_sequence())
+                {
+                    for tag in original_tags {
+                        if let Some(tag_str) = tag.as_str()
+                            && tag_str != "excerpt"
+                            && !tags.contains(&tag_str.to_string())
+                        {
+                            tags.push(tag_str.to_string());
+                        }
+                    }
+                }
+
+                // Format tags as YAML array
+                let tags_yaml = if tags.is_empty() {
+                    "[]".to_string()
+                } else {
+                    format!(
+                        "[{}]",
+                        tags.iter()
+                            .map(|t| format!("\"{t}\""))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
+
+                // Build new YAML with correct file/path and merged tags
                 format!(
                     r#"---
 file: "{dest_filename}"
@@ -629,7 +658,7 @@ path: "{dest_dir}"
 title: "{dest_filename}"
 description: "Excerpt from {source_filename}"
 duration: {selection_duration_f32:.2}
-tags: ["excerpt"]
+tags: {tags_yaml}
 source_file: "{source_path}"
 source_time_start: {start_mins}:{start_secs:02}
 source_time_end: {end_mins}:{end_secs:02}
@@ -641,7 +670,8 @@ extraction_type: "selection"
 {markdown_section}"#
                 )
             } else {
-                // No YAML frontmatter - add it
+                // No YAML frontmatter but has content - check if we can infer tags from content
+                // For now, just use "excerpt" tag
                 format!(
                     r#"---
 file: "{dest_filename}"
@@ -664,6 +694,34 @@ extraction_type: "selection"
                 )
             }
         } else {
+            // No source sidecar - check if we have tags from the browser's current file
+            // Get tags from the current audio file if available
+            let mut tags = vec!["excerpt".to_string()];
+
+            // Try to get tags from the browser's selected file
+            if let Some((idx, _)) = self.browser.filtered_indices.get(self.browser.selected)
+                && let Some(audio_file) = self.browser.items.get(*idx)
+            {
+                for tag in &audio_file.metadata.tags {
+                    if tag != "excerpt" && !tags.contains(tag) {
+                        tags.push(tag.clone());
+                    }
+                }
+            }
+
+            // Format tags as YAML array
+            let tags_yaml = if tags.is_empty() {
+                "[]".to_string()
+            } else {
+                format!(
+                    "[{}]",
+                    tags.iter()
+                        .map(|t| format!("\"{t}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+
             // Create new sidecar with correct metadata
             format!(
                 r#"---
@@ -672,7 +730,7 @@ path: "{dest_dir}"
 title: "{dest_filename}"
 description: "Excerpt from {source_filename}"
 duration: {selection_duration_f32:.2}
-tags: ["excerpt"]
+tags: {tags_yaml}
 source_file: "{source_path}"
 source_time_start: {start_mins}:{start_secs:02}
 source_time_end: {end_mins}:{end_secs:02}
