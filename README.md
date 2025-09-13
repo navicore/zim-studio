@@ -188,6 +188,7 @@ The player interface consists of:
 
 #### File Operations
 - `[/]` - Open file browser
+- `[e]` - Edit sidecar metadata in external editor ($EDITOR)
 - `[s]` - Save/export (full file or marked selection)
 - `[q]` - Quit player
 
@@ -198,10 +199,12 @@ The player interface consists of:
 The built-in file browser searches through your audio files using their sidecar `.md` metadata:
 
 1. Press `/` to open the browser
-2. Start typing to search - it searches within the markdown content of sidecar files
-3. Use `[↑/↓]` to navigate results
-4. Press `[Enter]` to load the selected file
-5. Press `[Esc]` to close browser
+2. Use `[↑/↓]` or `[j/k]` to navigate files
+3. Press `/` again to show search overlay
+4. Type to search - it searches within the markdown content of sidecar files
+5. Press `[Enter]` or `[Esc]` to hide search and return to file list
+6. Press `[Enter]` on a file to load it
+7. Press `[Esc]` to close browser
 
 **Note**: The browser displays audio files but searches their `.md` sidecar content. For example, if you have `kick.wav` with `kick.wav.md` containing "punchy 808 style", searching for "808" will find this file.
 
