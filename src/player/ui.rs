@@ -171,8 +171,9 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
             " loop  "
         }),
         create_control_button("s", Style::default().fg(Color::Cyan)),
-        Span::raw(" save"),
-        Span::raw("  "),
+        Span::raw(" save  "),
+        create_control_button("e", Style::default().fg(Color::Magenta)),
+        Span::raw(" edit  "),
         create_control_button("t", Style::default().fg(Color::Yellow)),
         Span::raw(if app.telemetry.config().enabled {
             " telemetry ●"
@@ -193,6 +194,19 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
 }
 
 fn draw_file_info_with_leds(f: &mut Frame, area: Rect, app: &App) {
+    // Show editor message if present
+    if let Some(ref message) = app.editor_message {
+        let msg_style = Style::default()
+            .fg(Color::Yellow)
+            .bg(Color::Black)
+            .add_modifier(Modifier::ITALIC);
+        let msg = Paragraph::new(message.as_str())
+            .style(msg_style)
+            .alignment(Alignment::Center);
+        f.render_widget(msg, area);
+        return;
+    }
+
     // Split area horizontally for file info and LEDs
     let chunks = Layout::default()
         .direction(Direction::Horizontal)

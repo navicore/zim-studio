@@ -12,7 +12,7 @@ use crossterm::{
 };
 use log::info;
 use ratatui::{Terminal, backend::CrosstermBackend};
-use std::{error::Error, io, time::Duration};
+use std::{error::Error, io, path::PathBuf, time::Duration};
 
 use super::audio::AudioEngine;
 use super::browser::Browser;
@@ -48,8 +48,10 @@ pub struct App {
     pub is_looping: bool, // Whether we're looping the selection
     pub view_mode: ViewMode,
     pub telemetry: AudioTelemetry,
-    previous_left_level: f32,  // For slew gate rate calculation
-    previous_right_level: f32, // For slew gate rate calculation
+    previous_left_level: f32,           // For slew gate rate calculation
+    previous_right_level: f32,          // For slew gate rate calculation
+    pub editor_message: Option<String>, // Message to show when editor can't open
+    editor_message_timer: Option<std::time::Instant>, // When to clear the message
 }
 
 impl App {
@@ -76,6 +78,8 @@ impl App {
             telemetry: AudioTelemetry::new(),
             previous_left_level: 0.0,
             previous_right_level: 0.0,
+            editor_message: None,
+            editor_message_timer: None,
         }
     }
 
@@ -827,6 +831,61 @@ Add your notes and tags here to document this excerpt.
             _ => (sample >> (bits_per_sample - 16)) as i16,
         }
     }
+
+    pub fn open_sidecar_in_editor(&mut self) -> Result<bool, Box<dyn Error>> {
+        // Get the current file path
+        let current_file = match &self.current_file {
+            Some(file) => file,
+            None => {
+                self.editor_message = Some("No audio file loaded".to_string());
+                self.editor_message_timer = Some(std::time::Instant::now());
+                return Ok(false);
+            }
+        };
+
+        // Construct sidecar path
+        let mut sidecar_path = PathBuf::from(current_file);
+        sidecar_path.as_mut_os_string().push(".md");
+
+        // Check if sidecar exists
+        if !sidecar_path.exists() {
+            self.editor_message =
+                Some("No sidecar file found - run 'zim update' first".to_string());
+            self.editor_message_timer = Some(std::time::Instant::now());
+            return Ok(false);
+        }
+
+        // Return true to signal that we need to handle terminal state in the main loop
+        Ok(true)
+    }
+
+    pub fn launch_editor(&mut self, sidecar_path: PathBuf) -> Result<(), Box<dyn Error>> {
+        // Get editor from environment or use vim as fallback
+        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
+
+        // Launch editor in a subprocess
+        let status = std::process::Command::new(&editor)
+            .arg(&sidecar_path)
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status();
+
+        match status {
+            Ok(exit_status) => {
+                if !exit_status.success() {
+                    self.editor_message = Some(format!("Editor '{}' exited with error", editor));
+                    self.editor_message_timer = Some(std::time::Instant::now());
+                }
+            }
+            Err(e) => {
+                self.editor_message = Some(format!("Failed to launch editor '{}': {}", editor, e));
+                self.editor_message_timer = Some(std::time::Instant::now());
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub fn run_with_file(
@@ -867,7 +926,67 @@ pub fn run_with_file(
         return Err(e);
     }
 
-    let res = run_app(&mut terminal, app);
+    loop {
+        let res = run_app(&mut terminal, &mut app);
+
+        match res {
+            Err(e) if e.to_string() == "EDITOR_REQUESTED" => {
+                // Check if we can open the editor
+                let should_open = app.open_sidecar_in_editor()?;
+
+                if should_open {
+                    // Get sidecar path again
+                    let current_file = app.current_file.clone().unwrap();
+                    let mut sidecar_path = PathBuf::from(current_file);
+                    sidecar_path.as_mut_os_string().push(".md");
+
+                    // Temporarily restore terminal for editor
+                    disable_raw_mode()?;
+                    execute!(
+                        terminal.backend_mut(),
+                        LeaveAlternateScreen,
+                        DisableMouseCapture
+                    )?;
+                    terminal.show_cursor()?;
+
+                    // Launch editor
+                    app.launch_editor(sidecar_path)?;
+
+                    // Re-setup terminal for player
+                    enable_raw_mode()?;
+                    execute!(
+                        terminal.backend_mut(),
+                        EnterAlternateScreen,
+                        EnableMouseCapture
+                    )?;
+                    terminal.hide_cursor()?;
+
+                    // Force a full redraw by clearing the terminal
+                    terminal.clear()?;
+                }
+
+                // Continue the main loop
+                continue;
+            }
+            Err(e) => {
+                // Restore terminal before showing error
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+
+                eprintln!("Error: {e}");
+                return Err(e);
+            }
+            Ok(_) => {
+                // Normal exit
+                break;
+            }
+        }
+    }
 
     // Restore terminal
     disable_raw_mode()?;
@@ -877,10 +996,6 @@ pub fn run_with_file(
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        eprintln!("Error: {err}");
-    }
 
     Ok(())
 }
@@ -916,7 +1031,67 @@ pub fn run_with_files(
         return Err(e);
     }
 
-    let res = run_app(&mut terminal, app);
+    loop {
+        let res = run_app(&mut terminal, &mut app);
+
+        match res {
+            Err(e) if e.to_string() == "EDITOR_REQUESTED" => {
+                // Check if we can open the editor
+                let should_open = app.open_sidecar_in_editor()?;
+
+                if should_open {
+                    // Get sidecar path again
+                    let current_file = app.current_file.clone().unwrap();
+                    let mut sidecar_path = PathBuf::from(current_file);
+                    sidecar_path.as_mut_os_string().push(".md");
+
+                    // Temporarily restore terminal for editor
+                    disable_raw_mode()?;
+                    execute!(
+                        terminal.backend_mut(),
+                        LeaveAlternateScreen,
+                        DisableMouseCapture
+                    )?;
+                    terminal.show_cursor()?;
+
+                    // Launch editor
+                    app.launch_editor(sidecar_path)?;
+
+                    // Re-setup terminal for player
+                    enable_raw_mode()?;
+                    execute!(
+                        terminal.backend_mut(),
+                        EnterAlternateScreen,
+                        EnableMouseCapture
+                    )?;
+                    terminal.hide_cursor()?;
+
+                    // Force a full redraw by clearing the terminal
+                    terminal.clear()?;
+                }
+
+                // Continue the main loop
+                continue;
+            }
+            Err(e) => {
+                // Restore terminal before showing error
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+
+                eprintln!("Error: {e}");
+                return Err(e);
+            }
+            Ok(_) => {
+                // Normal exit
+                break;
+            }
+        }
+    }
 
     // Restore terminal
     disable_raw_mode()?;
@@ -927,28 +1102,32 @@ pub fn run_with_files(
     )?;
     terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        eprintln!("Error: {err}");
-    }
-
     Ok(())
 }
 
 fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
-    mut app: App,
+    app: &mut App,
 ) -> Result<(), Box<dyn Error>> {
     loop {
         // Update waveform data
         app.update_waveform();
 
-        terminal.draw(|f| ui::draw(f, &app))?;
+        // Clear editor message after 3 seconds
+        if let Some(timer) = app.editor_message_timer {
+            if timer.elapsed() > Duration::from_secs(3) {
+                app.editor_message = None;
+                app.editor_message_timer = None;
+            }
+        }
+
+        terminal.draw(|f| ui::draw(f, app))?;
 
         // Poll for events with a short timeout to allow continuous rendering
         if event::poll(Duration::from_millis(50))?
             && let Event::Key(key) = event::read()?
         {
-            handle_key_event(&mut app, key)?;
+            handle_key_event(app, key)?;
         }
 
         if app.should_quit {
@@ -1252,6 +1431,10 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
         KeyCode::Char('x') => app.clear_marks(),
         KeyCode::Char('s') => app.open_save_dialog(),
         KeyCode::Char('l') => app.toggle_loop(),
+        KeyCode::Char('e') => {
+            // Signal that we want to open editor
+            return Err("EDITOR_REQUESTED".into());
+        }
         KeyCode::Char('t') => {
             if app.telemetry.config().enabled {
                 app.disable_telemetry();
