@@ -30,6 +30,7 @@ impl WaveformBuffer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_display_samples(&self, count: usize) -> Vec<f32> {
         if self.samples.is_empty() {
             return vec![0.0; count];
@@ -40,6 +41,50 @@ impl WaveformBuffer {
             .map(|i| {
                 let idx = (i as f32 * step) as usize;
                 self.samples.get(idx).copied().unwrap_or(0.0)
+            })
+            .collect()
+    }
+
+    /// Get min/max pairs for peak-to-peak display
+    /// This provides better waveform visualization by showing the envelope
+    pub fn get_display_peaks(&self, count: usize) -> Vec<(f32, f32)> {
+        if self.samples.is_empty() {
+            return vec![(0.0, 0.0); count];
+        }
+
+        let samples_per_pixel = self.samples.len() as f32 / count as f32;
+
+        (0..count)
+            .map(|i| {
+                let start_idx = (i as f32 * samples_per_pixel) as usize;
+                let end_idx = ((i + 1) as f32 * samples_per_pixel) as usize;
+                let end_idx = end_idx.min(self.samples.len());
+
+                if start_idx >= self.samples.len() {
+                    return (0.0, 0.0);
+                }
+
+                // Find min and max in this window
+                if start_idx == end_idx {
+                    // Single sample
+                    let sample = self.samples.get(start_idx).copied().unwrap_or(0.0);
+                    (sample, sample)
+                } else {
+                    // Multiple samples - find peaks
+                    let mut min = f32::INFINITY;
+                    let mut max = f32::NEG_INFINITY;
+                    for idx in start_idx..end_idx {
+                        if let Some(&sample) = self.samples.get(idx) {
+                            min = min.min(sample);
+                            max = max.max(sample);
+                        }
+                    }
+                    if min.is_infinite() {
+                        (0.0, 0.0)
+                    } else {
+                        (min, max)
+                    }
+                }
             })
             .collect()
     }
