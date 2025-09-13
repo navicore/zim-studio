@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::media::metadata::read_audio_metadata;
 use crate::templates::{self, SidecarMetadata};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -30,6 +31,9 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
         )
         .into());
     }
+
+    // Load configuration with tag mappings
+    let config = Arc::new(Config::load()?);
 
     println!(
         "{} {}",
@@ -82,6 +86,7 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
         &updated_count,
         &pb,
         &project_cache,
+        &config,
     )?;
 
     pb.finish_with_message("Done");
@@ -148,6 +153,7 @@ fn scan_directory(
     updated: &Arc<Mutex<u32>>,
     pb: &ProgressBar,
     project_cache: &Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
+    config: &Arc<Config>,
 ) -> Result<(), Box<dyn Error>> {
     let entries = fs::read_dir(dir)?;
 
@@ -182,6 +188,7 @@ fn scan_directory(
                 updated,
                 pb,
                 project_cache,
+                config,
             )?;
         } else if path.is_file() {
             // Check if this is an audio file
@@ -189,7 +196,15 @@ fn scan_directory(
                 let ext = extension.to_string_lossy().to_lowercase();
 
                 if audio_exts.contains(ext.as_str()) {
-                    process_media_file(&path, created, skipped, updated, pb, project_cache)?;
+                    process_media_file(
+                        &path,
+                        created,
+                        skipped,
+                        updated,
+                        pb,
+                        project_cache,
+                        config,
+                    )?;
                     pb.inc(1);
                 }
             }
@@ -372,6 +387,7 @@ fn process_media_file(
     updated: &Arc<Mutex<u32>>,
     pb: &ProgressBar,
     project_cache: &Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
+    config: &Arc<Config>,
 ) -> Result<(), Box<dyn Error>> {
     let sidecar_path = get_sidecar_path(file_path);
 
@@ -426,6 +442,7 @@ fn process_media_file(
         file_size,
         modified.as_deref(),
         project_name.as_deref(),
+        config,
     );
 
     fs::write(&sidecar_path, content)?;
@@ -520,6 +537,7 @@ fn generate_sidecar_content(
     file_size: u64,
     modified: Option<&str>,
     project: Option<&str>,
+    config: &Config,
 ) -> String {
     // Calculate smart defaults
     let title = extract_title_from_filename(file_name);
@@ -531,11 +549,19 @@ fn generate_sidecar_content(
     let description = generate_description(Some(file_type).filter(|s| !s.is_empty()), project);
 
     // Create tags list with the file type tag if available
-    let tags = if !tag.is_empty() {
+    let mut tags = if !tag.is_empty() {
         vec![tag.to_string()]
     } else {
         vec![]
     };
+
+    // Add tags based on filename mappings from config
+    let filename_lower = file_name.to_lowercase();
+    for (pattern, tag_value) in &config.tag_mappings {
+        if filename_lower.contains(&pattern.to_lowercase()) && !tags.contains(tag_value) {
+            tags.push(tag_value.clone());
+        }
+    }
 
     let extension = file_path
         .extension()

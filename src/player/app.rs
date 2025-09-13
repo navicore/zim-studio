@@ -597,55 +597,80 @@ impl App {
             }
         };
 
+        // Get destination file info
+        let dest_filename = dest_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("Unknown");
+
+        // Get parent directory path (without filename)
+        let dest_dir = dest_path.parent().and_then(|p| p.to_str()).unwrap_or(".");
+
+        // Get source filename for description
+        let source_filename = std::path::Path::new(source_path)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("unknown source");
+
         let content = if source_sidecar.exists() {
             // Clone existing sidecar and add provenance fields to YAML frontmatter
             let original_content = fs::read_to_string(&source_sidecar)?;
 
             if let Some(frontmatter_end) = original_content.find("\n---\n") {
-                // Has YAML frontmatter - update duration and insert our fields
-                let yaml_section = &original_content[..frontmatter_end];
+                // Has YAML frontmatter - update fields and insert our fields
+                let _yaml_section = &original_content[..frontmatter_end];
                 let markdown_section = &original_content[frontmatter_end + 5..]; // Skip "\n---\n"
 
-                // Update duration field if it exists, otherwise add it
-                let updated_yaml = if let Some(duration_start) = yaml_section.find("duration:") {
-                    // Find the end of the duration line
-                    let after_duration = &yaml_section[duration_start..];
-                    let duration_end = after_duration.find('\n').unwrap_or(after_duration.len());
-
-                    // Replace the duration line
-                    let before = &yaml_section[..duration_start];
-                    let after = &yaml_section[duration_start + duration_end..];
-                    format!("{before}duration: {selection_duration_f32:.2}{after}")
-                } else {
-                    // Add duration field
-                    format!("{yaml_section}\nduration: {selection_duration_f32:.2}")
-                };
-
+                // Build new YAML with correct file/path and updated fields
                 format!(
-                    "{updated_yaml}\nsource_file: \"{source_path}\"\nsource_time_start: {start_mins}:{start_secs:02}\nsource_time_end: {end_mins}:{end_secs:02}\nsource_duration: {sel_mins}:{sel_secs:02}\nextracted_at: {timestamp}\nextraction_type: \"selection\"\n---\n{markdown_section}"
+                    r#"---
+file: "{dest_filename}"
+path: "{dest_dir}"
+title: "{dest_filename}"
+description: "Excerpt from {source_filename}"
+duration: {selection_duration_f32:.2}
+tags: ["excerpt"]
+source_file: "{source_path}"
+source_time_start: {start_mins}:{start_secs:02}
+source_time_end: {end_mins}:{end_secs:02}
+source_duration: {sel_mins}:{sel_secs:02}
+extracted_at: {timestamp}
+extraction_type: "selection"
+---
+
+{markdown_section}"#
                 )
             } else {
                 // No YAML frontmatter - add it
-                let dest_filename = dest_path
-                    .file_name()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or("Unknown");
-
                 format!(
-                    "---\ntitle: \"{dest_filename}\"\nduration: {selection_duration_f32:.2}\nsource_file: \"{source_path}\"\nsource_time_start: {start_mins}:{start_secs:02}\nsource_time_end: {end_mins}:{end_secs:02}\nsource_duration: {sel_mins}:{sel_secs:02}\nextracted_at: {timestamp}\nextraction_type: \"selection\"\n---\n\n{}",
+                    r#"---
+file: "{dest_filename}"
+path: "{dest_dir}"
+title: "{dest_filename}"
+description: "Excerpt from {source_filename}"
+duration: {selection_duration_f32:.2}
+tags: ["excerpt"]
+source_file: "{source_path}"
+source_time_start: {start_mins}:{start_secs:02}
+source_time_end: {end_mins}:{end_secs:02}
+source_duration: {sel_mins}:{sel_secs:02}
+extracted_at: {timestamp}
+extraction_type: "selection"
+---
+
+{}
+"#,
                     original_content.trim()
                 )
             }
         } else {
-            // Create new sidecar with gentle reminder about missing source metadata
-            let dest_filename = dest_path
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or("Unknown");
-
+            // Create new sidecar with correct metadata
             format!(
                 r#"---
+file: "{dest_filename}"
+path: "{dest_dir}"
 title: "{dest_filename}"
+description: "Excerpt from {source_filename}"
 duration: {selection_duration_f32:.2}
 tags: ["excerpt"]
 source_file: "{source_path}"
@@ -658,9 +683,9 @@ extraction_type: "selection"
 
 # {dest_filename}
 
-**⚠️ Source file had no metadata**
+**Excerpt from: {source_filename}**
 
-This audio excerpt was extracted from a source file that did not have an associated sidecar (.md) file. Consider adding metadata to your source files for better organization and searchability.
+Time range: {start_mins}:{start_secs:02} - {end_mins}:{end_secs:02} (duration: {sel_mins}:{sel_secs:02})
 
 ## Notes
 

@@ -7,6 +7,7 @@
 //! structure and behavior.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
@@ -25,6 +26,8 @@ pub struct Config {
     pub normalize_project_names: bool,
     #[serde(default = "default_daw_folders")]
     pub daw_folders: Vec<String>,
+    #[serde(default = "default_tag_mappings")]
+    pub tag_mappings: HashMap<String, String>,
 }
 
 fn default_artist() -> String {
@@ -102,6 +105,33 @@ fn default_daw_folders() -> Vec<String> {
     ]
 }
 
+fn default_tag_mappings() -> HashMap<String, String> {
+    let mut mappings = HashMap::new();
+    // Common audio interface/hardware patterns
+    mappings.insert("ES-9".to_string(), "eurorack".to_string());
+    mappings.insert("ES-8".to_string(), "eurorack".to_string());
+    mappings.insert("ES-3".to_string(), "eurorack".to_string());
+    mappings.insert("modular".to_string(), "eurorack".to_string());
+    // DAW patterns
+    mappings.insert("ableton".to_string(), "ableton-live".to_string());
+    mappings.insert("reaper".to_string(), "reaper".to_string());
+    mappings.insert("bitwig".to_string(), "bitwig".to_string());
+    mappings.insert("renoise".to_string(), "renoise".to_string());
+    // Common descriptors
+    mappings.insert("loop".to_string(), "loop".to_string());
+    mappings.insert("drum".to_string(), "drums".to_string());
+    mappings.insert("bass".to_string(), "bass".to_string());
+    mappings.insert("kick".to_string(), "drums".to_string());
+    mappings.insert("snare".to_string(), "drums".to_string());
+    mappings.insert("hihat".to_string(), "drums".to_string());
+    mappings.insert("synth".to_string(), "synth".to_string());
+    mappings.insert("vocal".to_string(), "vocals".to_string());
+    mappings.insert("vox".to_string(), "vocals".to_string());
+    mappings.insert("field-recording".to_string(), "field-recording".to_string());
+    mappings.insert("ambient".to_string(), "ambient".to_string());
+    mappings
+}
+
 fn default_zimignore_content() -> String {
     r#"# ZIM Studio Default .zimignore
 # 
@@ -164,6 +194,7 @@ impl Config {
             include_readmes: default_include_readmes(),
             normalize_project_names: default_normalize_project_names(),
             daw_folders: default_daw_folders(),
+            tag_mappings: default_tag_mappings(),
         }
     }
 
