@@ -343,19 +343,53 @@ fn draw_grid(ctx: &mut Context, area: Rect) {
 }
 
 fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
-    // Get samples from the waveform buffer
-    let samples = app.waveform_buffer.get_display_samples(area.width as usize);
+    // Get peak pairs from the waveform buffer for better visualization
+    let peaks = app.waveform_buffer.get_display_peaks(area.width as usize);
 
-    let points: Vec<(f64, f64)> = if samples.iter().any(|&s| s != 0.0) {
-        // Use real audio data - amplify for better visibility
-        samples
-            .iter()
-            .enumerate()
-            .map(|(i, &sample)| {
-                let amplified = (sample * 1.5).clamp(-0.95, 0.95);
-                (i as f64, amplified as f64)
-            })
-            .collect()
+    if peaks.iter().any(|(min, max)| *min != 0.0 || *max != 0.0) {
+        // Draw real audio data using peak-to-peak visualization
+        for (i, (min, max)) in peaks.iter().enumerate() {
+            let x = i as f64;
+            // Amplify for better visibility
+            let min_amp = (*min * 1.5).clamp(-0.95, 0.95) as f64;
+            let max_amp = (*max * 1.5).clamp(-0.95, 0.95) as f64;
+
+            // Draw vertical line from min to max for this time slice
+            if (max_amp - min_amp).abs() > 0.01 {
+                // Only draw if there's actual signal
+                ctx.draw(&ratatui::widgets::canvas::Line {
+                    x1: x,
+                    y1: min_amp,
+                    x2: x,
+                    y2: max_amp,
+                    color: Color::Rgb(0, 255, 100), // Bright green
+                });
+            } else if max_amp.abs() > 0.01 {
+                // Draw a point for very quiet signals
+                ctx.draw(&ratatui::widgets::canvas::Line {
+                    x1: x,
+                    y1: max_amp - 0.01,
+                    x2: x,
+                    y2: max_amp + 0.01,
+                    color: Color::Rgb(0, 255, 100),
+                });
+            }
+
+            // Connect to zero line for better zero-crossing visibility
+            if i > 0 {
+                let prev_max = (peaks[i - 1].1 * 1.5).clamp(-0.95, 0.95) as f64;
+                // Draw connecting line if crossing zero
+                if (prev_max > 0.0 && min_amp < 0.0) || (prev_max < 0.0 && max_amp > 0.0) {
+                    ctx.draw(&ratatui::widgets::canvas::Line {
+                        x1: x - 0.5,
+                        y1: 0.0,
+                        x2: x,
+                        y2: 0.0,
+                        color: Color::Rgb(0, 150, 50), // Slightly darker green for zero crossings
+                    });
+                }
+            }
+        }
     } else {
         // Demo sine wave when no audio loaded
         let time_offset = std::time::SystemTime::now()
@@ -364,27 +398,22 @@ fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
             .as_millis() as f64
             / 1000.0;
 
-        (0..area.width)
-            .map(|x| {
-                let t = x as f64 / area.width as f64 * 4.0 * std::f64::consts::PI;
-                // Mix two sine waves for more interesting visualization
-                let y1 = (t + time_offset * 0.5).sin() * 0.8;
-                let y2 = ((t * 2.0) + time_offset).sin() * 0.4;
-                let y = (y1 + y2).clamp(-0.95, 0.95);
-                (x as f64, y)
-            })
-            .collect()
-    };
+        for x in 0..area.width {
+            let t = x as f64 / area.width as f64 * 4.0 * std::f64::consts::PI;
+            // Mix two sine waves for more interesting visualization
+            let y1 = (t + time_offset * 0.5).sin() * 0.8;
+            let y2 = ((t * 2.0) + time_offset).sin() * 0.4;
+            let y = (y1 + y2).clamp(-0.95, 0.95);
 
-    // Draw the waveform with brighter green
-    for window in points.windows(2) {
-        ctx.draw(&ratatui::widgets::canvas::Line {
-            x1: window[0].0,
-            y1: window[0].1,
-            x2: window[1].0,
-            y2: window[1].1,
-            color: Color::Rgb(0, 255, 100), // Bright green like old oscilloscopes
-        });
+            // Draw vertical lines to show the waveform
+            ctx.draw(&ratatui::widgets::canvas::Line {
+                x1: x as f64,
+                y1: 0.0,
+                x2: x as f64,
+                y2: y,
+                color: Color::Rgb(0, 255, 100),
+            });
+        }
     }
 }
 
