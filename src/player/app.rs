@@ -623,14 +623,16 @@ impl App {
 
                 // Parse original YAML to get tags
                 let mut tags = vec!["excerpt".to_string()];
-                if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(yaml_section) {
-                    if let Some(original_tags) = yaml_value.get("tags").and_then(|v| v.as_sequence()) {
-                        for tag in original_tags {
-                            if let Some(tag_str) = tag.as_str() {
-                                if tag_str != "excerpt" && !tags.contains(&tag_str.to_string()) {
-                                    tags.push(tag_str.to_string());
-                                }
-                            }
+                if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(yaml_section)
+                    && let Some(original_tags) =
+                        yaml_value.get("tags").and_then(|v| v.as_sequence())
+                {
+                    for tag in original_tags {
+                        if let Some(tag_str) = tag.as_str()
+                            && tag_str != "excerpt"
+                            && !tags.contains(&tag_str.to_string())
+                        {
+                            tags.push(tag_str.to_string());
                         }
                     }
                 }
@@ -639,7 +641,13 @@ impl App {
                 let tags_yaml = if tags.is_empty() {
                     "[]".to_string()
                 } else {
-                    format!("[{}]", tags.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(", "))
+                    format!(
+                        "[{}]",
+                        tags.iter()
+                            .map(|t| format!("\"{t}\""))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
                 };
 
                 // Build new YAML with correct file/path and merged tags
@@ -691,12 +699,12 @@ extraction_type: "selection"
             let mut tags = vec!["excerpt".to_string()];
 
             // Try to get tags from the browser's selected file
-            if let Some((idx, _)) = self.browser.filtered_indices.get(self.browser.selected) {
-                if let Some(audio_file) = self.browser.items.get(*idx) {
-                    for tag in &audio_file.metadata.tags {
-                        if tag != "excerpt" && !tags.contains(tag) {
-                            tags.push(tag.clone());
-                        }
+            if let Some((idx, _)) = self.browser.filtered_indices.get(self.browser.selected)
+                && let Some(audio_file) = self.browser.items.get(*idx)
+            {
+                for tag in &audio_file.metadata.tags {
+                    if tag != "excerpt" && !tags.contains(tag) {
+                        tags.push(tag.clone());
                     }
                 }
             }
@@ -705,7 +713,13 @@ extraction_type: "selection"
             let tags_yaml = if tags.is_empty() {
                 "[]".to_string()
             } else {
-                format!("[{}]", tags.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(", "))
+                format!(
+                    "[{}]",
+                    tags.iter()
+                        .map(|t| format!("\"{t}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             };
 
             // Create new sidecar with correct metadata
