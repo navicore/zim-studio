@@ -212,6 +212,111 @@ fn find_project_root(file_path: &Path) -> Option<String> {
     None
 }
 
+/// Extract a clean title from a filename by removing the extension
+fn extract_title_from_filename(filename: &str) -> String {
+    // Remove extension(s) - handles cases like "my.song.wav"
+    if let Some(dot_pos) = filename.rfind('.') {
+        filename[..dot_pos].to_string()
+    } else {
+        filename.to_string()
+    }
+}
+
+/// Determine the file type based on its directory within the project
+/// Returns (singular_type, tag) e.g., ("edit", "edit") or ("source", "source")
+fn determine_file_type(file_path: &Path) -> Option<(String, String)> {
+    // Get the path components
+    let components: Vec<&str> = file_path
+        .components()
+        .filter_map(|c| {
+            if let std::path::Component::Normal(s) = c {
+                s.to_str()
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Look for known audio directories in the path
+    // Start from the first directory after the project root and look for known patterns
+    for component in components.iter().rev().skip(1) {
+        // Skip the filename itself
+        let dir = component.to_lowercase();
+
+        // Map directory names to their singular forms and tags
+        let (singular, tag) = match dir.as_str() {
+            "mixes" => ("mix", "mix"),
+            "mix" => ("mix", "mix"),
+            "edits" => ("edit", "edit"),
+            "edit" => ("edit", "edit"),
+            "sources" => ("source", "source"),
+            "source" => ("source", "source"),
+            "recordings" => ("recording", "recording"),
+            "recording" => ("recording", "recording"),
+            "samples" => ("sample", "sample"),
+            "sample" => ("sample", "sample"),
+            "stems" => ("stem", "stem"),
+            "stem" => ("stem", "stem"),
+            "bounced" => ("bounce", "bounce"),
+            "bounce" => ("bounce", "bounce"),
+            "renders" => ("render", "render"),
+            "render" => ("render", "render"),
+            "masters" => ("master", "master"),
+            "master" => ("master", "master"),
+            "demos" => ("demo", "demo"),
+            "demo" => ("demo", "demo"),
+            "drafts" => ("draft", "draft"),
+            "draft" => ("draft", "draft"),
+            "ideas" => ("idea", "idea"),
+            "idea" => ("idea", "idea"),
+            "loops" => ("loop", "loop"),
+            "loop" => ("loop", "loop"),
+            "takes" => ("take", "take"),
+            "take" => ("take", "take"),
+            _ => {
+                // Not a known audio directory, continue searching
+                continue;
+            }
+        };
+
+        return Some((singular.to_string(), tag.to_string()));
+    }
+
+    None
+}
+
+/// Determine whether to use "a" or "an" based on the word
+fn get_article(word: &str) -> &'static str {
+    if word.is_empty() {
+        return "a";
+    }
+
+    let first_char = word.chars().next().unwrap().to_ascii_lowercase();
+
+    // Check for vowel sounds (simplified - doesn't handle all edge cases)
+    match first_char {
+        'a' | 'e' | 'i' | 'o' | 'u' => "an",
+        // Special cases for words that start with silent 'h'
+        'h' if word.to_lowercase().starts_with("hour") => "an",
+        _ => "a",
+    }
+}
+
+/// Generate a smart description based on file type and project
+fn generate_description(file_type: Option<&str>, project: Option<&str>) -> String {
+    match (file_type, project) {
+        (Some(ft), Some(proj)) => {
+            let article = get_article(ft);
+            format!("{article} {ft} for {proj}")
+        }
+        (Some(ft), None) => {
+            let article = get_article(ft);
+            format!("{article} {ft}")
+        }
+        _ => String::new(),
+    }
+}
+
 fn process_media_file(
     file_path: &Path,
     created: &Arc<Mutex<u32>>,
@@ -359,6 +464,22 @@ fn generate_sidecar_content(
     modified: Option<&str>,
     project: Option<&str>,
 ) -> String {
+    // Calculate smart defaults
+    let title = extract_title_from_filename(file_name);
+    let file_type_info = determine_file_type(Path::new(relative_path));
+    let (file_type, tag) = file_type_info
+        .as_ref()
+        .map(|(t, tag)| (t.as_str(), tag.as_str()))
+        .unwrap_or(("", ""));
+    let description = generate_description(Some(file_type).filter(|s| !s.is_empty()), project);
+
+    // Create tags list with the file type tag if available
+    let tags = if !tag.is_empty() {
+        vec![tag.to_string()]
+    } else {
+        vec![]
+    };
+
     let extension = file_path
         .extension()
         .and_then(|e| e.to_str())
@@ -372,6 +493,9 @@ fn generate_sidecar_content(
                     templates::generate_audio_sidecar_with_metadata(&SidecarMetadata {
                         file_name,
                         file_path: relative_path,
+                        title: &title,
+                        description: &description,
+                        tags: &tags,
                         sample_rate: metadata.sample_rate,
                         channels: metadata.channels,
                         bits_per_sample: metadata.bits_per_sample,
@@ -391,6 +515,9 @@ fn generate_sidecar_content(
                     templates::generate_minimal_sidecar_with_fs_metadata(
                         file_name,
                         relative_path,
+                        &title,
+                        &description,
+                        &tags,
                         file_size,
                         modified,
                         project,
@@ -403,6 +530,9 @@ fn generate_sidecar_content(
             templates::generate_minimal_sidecar_with_fs_metadata(
                 file_name,
                 relative_path,
+                &title,
+                &description,
+                &tags,
                 file_size,
                 modified,
                 project,

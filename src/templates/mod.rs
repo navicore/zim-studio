@@ -1,6 +1,9 @@
 pub struct SidecarMetadata<'a> {
     pub file_name: &'a str,
     pub file_path: &'a str,
+    pub title: &'a str,
+    pub description: &'a str,
+    pub tags: &'a [String],
     pub sample_rate: u32,
     pub channels: u16,
     pub bits_per_sample: u16,
@@ -10,9 +13,13 @@ pub struct SidecarMetadata<'a> {
     pub project: Option<&'a str>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn generate_minimal_sidecar_with_fs_metadata(
     file_name: &str,
     file_path: &str,
+    title: &str,
+    description: &str,
+    tags: &[String],
     file_size: u64,
     modified: Option<&str>,
     project: Option<&str>,
@@ -20,16 +27,23 @@ pub fn generate_minimal_sidecar_with_fs_metadata(
     let modified_str = modified.unwrap_or("unknown");
     let project_str = project.unwrap_or("unknown");
 
+    // Format tags as YAML array
+    let tags_str = if tags.is_empty() {
+        "[]".to_string()
+    } else {
+        format!("[\"{}\"]", tags.join("\", \""))
+    };
+
     format!(
         r#"---
 file: "{file_name}"
 path: "{file_path}"
 project: "{project_str}"
-title: ""
-description: ""
+title: "{title}"
+description: "{description}"
 file_size: {file_size}
 modified: "{modified_str}"
-tags: []
+tags: {tags_str}
 art: []
 ---
 
@@ -49,20 +63,27 @@ pub fn generate_audio_sidecar_with_metadata(metadata: &SidecarMetadata) -> Strin
     let modified_str = metadata.modified.unwrap_or("unknown");
     let project_str = metadata.project.unwrap_or("unknown");
 
+    // Format tags as YAML array
+    let tags_str = if metadata.tags.is_empty() {
+        "[]".to_string()
+    } else {
+        format!("[\"{}\"]", metadata.tags.join("\", \""))
+    };
+
     format!(
         r#"---
 file: "{}"
 path: "{}"
 project: "{project_str}"
-title: ""
-description: ""
+title: "{}"
+description: "{}"
 duration: {duration_str}
 sample_rate: {}
 channels: {}
 bit_depth: {}
 file_size: {}
 modified: "{modified_str}"
-tags: []
+tags: {tags_str}
 art: []
 ---
 
@@ -72,6 +93,8 @@ art: []
 "#,
         metadata.file_name,
         metadata.file_path,
+        metadata.title,
+        metadata.description,
         metadata.sample_rate,
         metadata.channels,
         metadata.bits_per_sample,
@@ -88,6 +111,9 @@ mod tests {
         let content = generate_minimal_sidecar_with_fs_metadata(
             "test.mp3",
             "/path/to/test.mp3",
+            "test",
+            "A source for my-project",
+            &["source".to_string()],
             1234567,
             Some("2024-01-15 10:30:00 UTC"),
             Some("my-project"),
@@ -96,17 +122,27 @@ mod tests {
         assert!(content.contains("file: \"test.mp3\""));
         assert!(content.contains("path: \"/path/to/test.mp3\""));
         assert!(content.contains("project: \"my-project\""));
+        assert!(content.contains("title: \"test\""));
+        assert!(content.contains("description: \"A source for my-project\""));
+        assert!(content.contains("tags: [\"source\"]"));
         assert!(content.contains("file_size: 1234567"));
         assert!(content.contains("modified: \"2024-01-15 10:30:00 UTC\""));
-        assert!(content.contains("tags: []"));
         assert!(content.contains("art: []"));
         assert!(content.contains("# Notes"));
     }
 
     #[test]
     fn test_generate_minimal_sidecar_without_modified() {
-        let content =
-            generate_minimal_sidecar_with_fs_metadata("test.aiff", "./test.aiff", 999, None, None);
+        let content = generate_minimal_sidecar_with_fs_metadata(
+            "test.aiff",
+            "./test.aiff",
+            "test",
+            "",
+            &[],
+            999,
+            None,
+            None,
+        );
 
         assert!(content.contains("modified: \"unknown\""));
         assert!(content.contains("project: \"unknown\""));
@@ -117,6 +153,9 @@ mod tests {
         let metadata = SidecarMetadata {
             file_name: "audio.wav",
             file_path: "/music/audio.wav",
+            title: "audio",
+            description: "A mix for awesome-project",
+            tags: &["mix".to_string()],
             sample_rate: 44100,
             channels: 2,
             bits_per_sample: 16,
@@ -131,6 +170,9 @@ mod tests {
         assert!(content.contains("file: \"audio.wav\""));
         assert!(content.contains("path: \"/music/audio.wav\""));
         assert!(content.contains("project: \"awesome-project\""));
+        assert!(content.contains("title: \"audio\""));
+        assert!(content.contains("description: \"A mix for awesome-project\""));
+        assert!(content.contains("tags: [\"mix\"]"));
         assert!(content.contains("duration: 123.45"));
         assert!(content.contains("sample_rate: 44100"));
         assert!(content.contains("channels: 2"));
@@ -144,6 +186,9 @@ mod tests {
         let metadata = SidecarMetadata {
             file_name: "audio.flac",
             file_path: "./audio.flac",
+            title: "audio",
+            description: "",
+            tags: &[],
             sample_rate: 48000,
             channels: 1,
             bits_per_sample: 24,
@@ -162,8 +207,16 @@ mod tests {
 
     #[test]
     fn test_yaml_frontmatter_format() {
-        let content =
-            generate_minimal_sidecar_with_fs_metadata("test.mp3", "/test.mp3", 1000, None, None);
+        let content = generate_minimal_sidecar_with_fs_metadata(
+            "test.mp3",
+            "/test.mp3",
+            "test",
+            "",
+            &[],
+            1000,
+            None,
+            None,
+        );
 
         // Check YAML frontmatter delimiters
         assert!(content.starts_with("---\n"));
