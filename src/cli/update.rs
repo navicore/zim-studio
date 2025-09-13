@@ -181,6 +181,37 @@ fn scan_directory(
     Ok(())
 }
 
+/// Find the project root by looking for the nearest .zimignore file
+fn find_project_root(file_path: &Path) -> Option<String> {
+    // Start from the file's parent directory
+    let mut current = file_path.parent();
+
+    while let Some(dir) = current {
+        let zimignore_path = dir.join(".zimignore");
+        if zimignore_path.exists() {
+            // Found a project root - return its directory name
+            // If this is the current working directory ("."), get the actual directory name
+            if dir == Path::new(".") {
+                // Get the absolute path to get the real directory name
+                if let Ok(abs_path) = std::env::current_dir() {
+                    return abs_path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|s| s.to_string());
+                }
+            }
+
+            return dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|s| s.to_string());
+        }
+        current = dir.parent();
+    }
+
+    None
+}
+
 fn process_media_file(
     file_path: &Path,
     created: &Arc<Mutex<u32>>,
@@ -224,12 +255,16 @@ fn process_media_file(
     // Get file system metadata
     let (file_size, modified) = extract_file_metadata(file_path)?;
 
+    // Find the project name
+    let project_name = find_project_root(file_path);
+
     let content = generate_sidecar_content(
         file_path,
         &file_name,
         &relative_path.to_string_lossy(),
         file_size,
         modified.as_deref(),
+        project_name.as_deref(),
     );
 
     fs::write(&sidecar_path, content)?;
@@ -322,6 +357,7 @@ fn generate_sidecar_content(
     relative_path: &str,
     file_size: u64,
     modified: Option<&str>,
+    project: Option<&str>,
 ) -> String {
     let extension = file_path
         .extension()
@@ -342,6 +378,7 @@ fn generate_sidecar_content(
                         duration_seconds: metadata.duration_seconds,
                         file_size,
                         modified,
+                        project,
                     })
                 }
                 Err(e) => {
@@ -356,6 +393,7 @@ fn generate_sidecar_content(
                         relative_path,
                         file_size,
                         modified,
+                        project,
                     )
                 }
             }
@@ -367,6 +405,7 @@ fn generate_sidecar_content(
                 relative_path,
                 file_size,
                 modified,
+                project,
             )
         }
     }

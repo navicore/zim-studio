@@ -7,6 +7,7 @@ pub struct SidecarMetadata<'a> {
     pub duration_seconds: Option<f64>,
     pub file_size: u64,
     pub modified: Option<&'a str>,
+    pub project: Option<&'a str>,
 }
 
 pub fn generate_minimal_sidecar_with_fs_metadata(
@@ -14,13 +15,16 @@ pub fn generate_minimal_sidecar_with_fs_metadata(
     file_path: &str,
     file_size: u64,
     modified: Option<&str>,
+    project: Option<&str>,
 ) -> String {
     let modified_str = modified.unwrap_or("unknown");
+    let project_str = project.unwrap_or("unknown");
 
     format!(
         r#"---
 file: "{file_name}"
 path: "{file_path}"
+project: "{project_str}"
 title: ""
 description: ""
 file_size: {file_size}
@@ -43,11 +47,13 @@ pub fn generate_audio_sidecar_with_metadata(metadata: &SidecarMetadata) -> Strin
         .unwrap_or_else(|| "unknown".to_string());
 
     let modified_str = metadata.modified.unwrap_or("unknown");
+    let project_str = metadata.project.unwrap_or("unknown");
 
     format!(
         r#"---
 file: "{}"
 path: "{}"
+project: "{project_str}"
 title: ""
 description: ""
 duration: {duration_str}
@@ -84,10 +90,12 @@ mod tests {
             "/path/to/test.mp3",
             1234567,
             Some("2024-01-15 10:30:00 UTC"),
+            Some("my-project"),
         );
 
         assert!(content.contains("file: \"test.mp3\""));
         assert!(content.contains("path: \"/path/to/test.mp3\""));
+        assert!(content.contains("project: \"my-project\""));
         assert!(content.contains("file_size: 1234567"));
         assert!(content.contains("modified: \"2024-01-15 10:30:00 UTC\""));
         assert!(content.contains("tags: []"));
@@ -98,9 +106,10 @@ mod tests {
     #[test]
     fn test_generate_minimal_sidecar_without_modified() {
         let content =
-            generate_minimal_sidecar_with_fs_metadata("test.aiff", "./test.aiff", 999, None);
+            generate_minimal_sidecar_with_fs_metadata("test.aiff", "./test.aiff", 999, None, None);
 
         assert!(content.contains("modified: \"unknown\""));
+        assert!(content.contains("project: \"unknown\""));
     }
 
     #[test]
@@ -114,12 +123,14 @@ mod tests {
             duration_seconds: Some(123.45),
             file_size: 5432100,
             modified: Some("2024-01-15 10:30:00 UTC"),
+            project: Some("awesome-project"),
         };
 
         let content = generate_audio_sidecar_with_metadata(&metadata);
 
         assert!(content.contains("file: \"audio.wav\""));
         assert!(content.contains("path: \"/music/audio.wav\""));
+        assert!(content.contains("project: \"awesome-project\""));
         assert!(content.contains("duration: 123.45"));
         assert!(content.contains("sample_rate: 44100"));
         assert!(content.contains("channels: 2"));
@@ -139,18 +150,20 @@ mod tests {
             duration_seconds: None,
             file_size: 1000000,
             modified: None,
+            project: None,
         };
 
         let content = generate_audio_sidecar_with_metadata(&metadata);
 
         assert!(content.contains("duration: unknown"));
         assert!(content.contains("modified: \"unknown\""));
+        assert!(content.contains("project: \"unknown\""));
     }
 
     #[test]
     fn test_yaml_frontmatter_format() {
         let content =
-            generate_minimal_sidecar_with_fs_metadata("test.mp3", "/test.mp3", 1000, None);
+            generate_minimal_sidecar_with_fs_metadata("test.mp3", "/test.mp3", 1000, None, None);
 
         // Check YAML frontmatter delimiters
         assert!(content.starts_with("---\n"));
