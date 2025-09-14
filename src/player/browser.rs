@@ -185,7 +185,13 @@ impl Browser {
     }
 
     pub fn push_char(&mut self, c: char) {
+        log::debug!(
+            "Before push_char: search_query = {:?}, char = {:?}",
+            self.search_query,
+            c
+        );
         self.search_query.push(c);
+        log::debug!("After push_char: search_query = {:?}", self.search_query);
         self.filter_items();
     }
 

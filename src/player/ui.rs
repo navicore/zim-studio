@@ -590,13 +590,18 @@ fn draw_floating_search_bar(f: &mut Frame, area: Rect, browser: &super::browser:
         height,
     };
 
-    // Clear the background area first with a block
+    // Use Clear widget to properly clear the area underneath
+    f.render_widget(ratatui::widgets::Clear, search_area);
+
+    // Then render a solid background block
     let clear_block = Block::default().style(Style::default().bg(Color::Black));
     f.render_widget(clear_block, search_area);
 
     let search_text = if browser.search_query.is_empty() {
         "Type to search or use 'title:' or 'tag:'...".to_string()
     } else {
+        // Debug: Log what we're about to display
+        log::debug!("Search query to display: {:?}", browser.search_query);
         browser.search_query.clone()
     };
 
@@ -695,22 +700,21 @@ fn draw_browser_content(f: &mut Frame, area: Rect, browser: &super::browser::Bro
     let max_chars = usable_width * usable_height; // Maximum characters that can fit
 
     let preview_content = if browser.selected < filtered_items.len() {
-        let (item, context) = filtered_items[browser.selected];
-        context.clone().unwrap_or_else(|| {
-            if !item.metadata.content.is_empty() {
-                // Use a reasonable default (2000 chars) or the calculated max, whichever is smaller
-                // This prevents showing too much text on very large terminals
-                let limit = max_chars.min(2000);
-                let content: String = item.metadata.content.chars().take(limit).collect();
-                if item.metadata.content.len() > limit {
-                    content + "..."
-                } else {
-                    content
-                }
+        let (item, _context) = filtered_items[browser.selected];
+        // Always show the full metadata content for preview, not just the search context
+        if !item.metadata.content.is_empty() {
+            // Use a reasonable default (2000 chars) or the calculated max, whichever is smaller
+            // This prevents showing too much text on very large terminals
+            let limit = max_chars.min(2000);
+            let content: String = item.metadata.content.chars().take(limit).collect();
+            if item.metadata.content.len() > limit {
+                content + "..."
             } else {
-                "No preview available".to_string()
+                content
             }
-        })
+        } else {
+            "No preview available".to_string()
+        }
     } else {
         "No preview available".to_string()
     };
