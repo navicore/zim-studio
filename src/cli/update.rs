@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::media::metadata::read_audio_metadata;
 use crate::templates::{self, SidecarMetadata};
+use crate::wav_metadata;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use serde_yaml;
@@ -568,6 +569,50 @@ fn generate_sidecar_content(
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase());
 
+    // For WAV files, check/add ZIM metadata first
+    let uuid = if extension.as_deref() == Some("wav") {
+        // Check if file already has ZIM metadata
+        let existing_metadata = wav_metadata::read_metadata(file_path).ok().flatten();
+
+        if let Some(metadata) = existing_metadata {
+            // File already has metadata, just get the UUID
+            Some(metadata.uuid)
+        } else {
+            // No metadata yet - tag the file in-place
+            if let Ok(abs_path) = std::fs::canonicalize(file_path) {
+                let project_name = project.unwrap_or("unknown");
+                let mut new_metadata =
+                    wav_metadata::ZimMetadata::new_original(project_name, &abs_path);
+
+                // Calculate MD5 and set it
+                if let Ok(md5) = wav_metadata::calculate_audio_md5(file_path) {
+                    new_metadata.audio_md5 = md5;
+                }
+
+                // Create temp file for safety
+                let temp_path = file_path.with_extension("wav.tmp");
+
+                // Write metadata to temp file
+                if wav_metadata::write_metadata(file_path, &temp_path, &new_metadata).is_ok() {
+                    // Replace original with temp file
+                    if std::fs::rename(&temp_path, file_path).is_ok() {
+                        Some(new_metadata.uuid)
+                    } else {
+                        // Clean up temp file if rename failed
+                        let _ = std::fs::remove_file(&temp_path);
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     match extension.as_deref() {
         Some("flac") | Some("wav") => {
             match read_audio_metadata(file_path) {
@@ -586,6 +631,7 @@ fn generate_sidecar_content(
                         file_size,
                         modified,
                         project,
+                        uuid: uuid.as_deref(),
                     })
                 }
                 Err(e) => {
@@ -604,6 +650,7 @@ fn generate_sidecar_content(
                         file_size,
                         modified,
                         project,
+                        uuid.as_deref(),
                     )
                 }
             }
@@ -619,6 +666,7 @@ fn generate_sidecar_content(
                 file_size,
                 modified,
                 project,
+                None,
             )
         }
     }
