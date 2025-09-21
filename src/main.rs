@@ -116,7 +116,7 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum TagAction {
-    /// Add metadata to a WAV file (creates _tagged copy)
+    /// Create a tagged copy with metadata (original unchanged, new file: *_tagged.wav)
     Add {
         /// WAV file to tag
         file: String,
@@ -124,7 +124,7 @@ enum TagAction {
         #[arg(short, long)]
         project: Option<String>,
     },
-    /// Edit metadata in-place (updates original file)
+    /// Embed metadata directly into existing file (modifies original, backup in /tmp)
     Edit {
         /// WAV file to tag
         file: String,
@@ -135,12 +135,12 @@ enum TagAction {
         #[arg(long)]
         no_backup: bool,
     },
-    /// Read metadata from a WAV file
+    /// Display embedded metadata from a WAV file
     Info {
         /// WAV file to read
         file: String,
     },
-    /// Create a derived WAV file with lineage tracking
+    /// Copy WAV with lineage tracking (tracks parent/child relationship between files)
     Derive {
         /// Input WAV file
         input: String,

@@ -135,6 +135,84 @@ To customize tag mappings, edit `~/.config/zim/config.toml`:
 
 **Note**: If you have an existing config file, the default tag mappings will still work automatically - no migration needed!
 
+## WAV Metadata Tagging
+
+ZIM can embed metadata directly into WAV files using INFO LIST chunks. This metadata includes UUIDs for unique identification and lineage tracking across your DAW workflows.
+
+### Tag Commands
+
+#### `zim tag add` - Tag a copy of the file
+Creates a new WAV file with `_tagged` suffix containing embedded metadata. The original file remains unchanged.
+
+```bash
+# Tag a WAV file (creates kick_tagged.wav)
+zim tag add kick.wav
+
+# Specify project explicitly (otherwise auto-detected from .zimignore)
+zim tag add kick.wav --project "my-album"
+```
+
+#### `zim tag edit` - Tag in-place
+Updates the original WAV file directly with embedded metadata. Creates a backup in `/tmp` by default.
+
+```bash
+# Update metadata in the original file
+zim tag edit kick.wav
+
+# Skip backup creation (use with caution)
+zim tag edit kick.wav --no-backup
+```
+
+#### `zim tag derive` - Create derived file with lineage
+Creates a new WAV file that tracks its relationship to the source file. Perfect for tracking exports, bounces, and transformations.
+
+```bash
+# Create a derived file (e.g., after processing in a DAW)
+zim tag derive original.wav processed.wav --transform "eq+compress"
+
+# Common transform types: excerpt, mix, master, bounce, process
+zim tag derive full_take.wav intro_only.wav --transform "excerpt"
+```
+
+#### `zim tag info` - Read embedded metadata
+Displays any ZIM metadata embedded in a WAV file.
+
+```bash
+# Check if a WAV file has metadata
+zim tag info some_file.wav
+```
+
+### Metadata Fields
+
+Each tagged WAV file contains:
+- **UUID**: Unique identifier for the file
+- **Parent UUID**: Link to source file (for derived files)
+- **Project**: Associated project name
+- **Generation**: How many transformations from the original (0 = original)
+- **Transform**: Type of processing applied (for derived files)
+- **Audio MD5**: Fingerprint of the audio data
+- **First Seen**: ISO 8601 timestamp when first tagged
+- **Original Path**: Where the file was first tagged
+
+### Integration with `zim update`
+
+The `zim update` command automatically tags any untagged WAV files it encounters, embedding metadata directly into the files. The UUID is also included in the generated markdown sidecar files for cross-referencing.
+
+```bash
+# Recursively process directory, auto-tagging WAV files
+zim update .
+```
+
+### Use Cases
+
+1. **Import Tracking**: When importing WAV files into a DAW, they retain their identity
+2. **Export Lineage**: Track which files were derived from which sources
+3. **Collaboration**: Share WAV files that carry their own provenance
+4. **Deduplication**: Identify the same audio even if files are renamed
+5. **Project Organization**: Find all files belonging to a specific project
+
+**Note**: If you have an existing config file, the default tag mappings will still work automatically - no migration needed!
+
 ## Shell Completions
 
 Add to your shell configuration:
