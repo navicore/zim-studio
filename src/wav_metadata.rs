@@ -96,32 +96,66 @@ pub fn calculate_audio_md5(path: &Path) -> Result<String, Box<dyn Error>> {
         return Err("Not a RIFF file".into());
     }
 
-    let _file_size = read_u32_le(&mut reader)?;
+    let file_size = read_u32_le(&mut reader)?;
     let wave_id = read_fourcc(&mut reader)?;
     if wave_id != "WAVE" {
         return Err("Not a WAVE file".into());
     }
 
+    // Track position to prevent reading past file size
+    let mut pos = 12u64; // Already read 12 bytes (RIFF + size + WAVE)
+    let max_pos = file_size as u64 + 8; // RIFF size doesn't include RIFF header
+
     // Find data chunk
-    loop {
-        let chunk_id = read_fourcc(&mut reader)?;
-        let chunk_size = read_u32_le(&mut reader)?;
+    while pos < max_pos {
+        let chunk_id = match read_fourcc(&mut reader) {
+            Ok(id) => id,
+            Err(_) => break, // EOF reached
+        };
+        let chunk_size = match read_u32_le(&mut reader) {
+            Ok(size) => size,
+            Err(_) => break, // EOF reached
+        };
+        pos += 8;
+
+        // Validate chunk size
+        if chunk_size > file_size {
+            return Err("Invalid chunk size".into());
+        }
 
         if chunk_id == "data" {
-            // Read audio data and calculate MD5
-            let mut audio_data = vec![0u8; chunk_size as usize];
-            reader.read_exact(&mut audio_data)?;
-            let digest = md5::compute(&audio_data);
+            // Calculate MD5 using chunked reading for large files
+            let mut context = md5::Context::new();
+
+            const BUFFER_SIZE: usize = 8192; // 8KB chunks
+            let mut buffer = vec![0u8; BUFFER_SIZE];
+            let mut remaining = chunk_size as usize;
+
+            while remaining > 0 {
+                let to_read = remaining.min(BUFFER_SIZE);
+                let bytes_read = reader.read(&mut buffer[..to_read])?;
+                if bytes_read == 0 {
+                    return Err("Unexpected end of file in data chunk".into());
+                }
+                context.consume(&buffer[..bytes_read]);
+                remaining -= bytes_read;
+            }
+
+            let digest = context.finalize();
             return Ok(format!("{digest:x}"));
         } else {
             // Skip this chunk
             reader.seek(SeekFrom::Current(chunk_size as i64))?;
+            pos += chunk_size as u64;
             // Pad byte if chunk size is odd
             if chunk_size % 2 == 1 {
                 reader.seek(SeekFrom::Current(1))?;
+                pos += 1;
             }
         }
     }
+
+    Err("Data chunk not found".into())
 }
 
 /// Read ZIM metadata from WAV file's INFO chunk
@@ -135,35 +169,56 @@ pub fn read_metadata(path: &Path) -> Result<Option<ZimMetadata>, Box<dyn Error>>
         return Err("Not a RIFF file".into());
     }
 
-    let _file_size = read_u32_le(&mut reader)?;
+    let file_size = read_u32_le(&mut reader)?;
     let wave_id = read_fourcc(&mut reader)?;
     if wave_id != "WAVE" {
         return Err("Not a WAVE file".into());
     }
 
+    // Track position to prevent reading past file size
+    let mut pos = 12u64; // Already read 12 bytes (RIFF + size + WAVE)
+    let max_pos = file_size as u64 + 8; // RIFF size doesn't include RIFF header
+
     // Look for LIST INFO chunk
-    loop {
+    while pos < max_pos {
         let chunk_id = match read_fourcc(&mut reader) {
             Ok(id) => id,
             Err(_) => return Ok(None), // End of file
         };
-        let chunk_size = read_u32_le(&mut reader)?;
+        let chunk_size = match read_u32_le(&mut reader) {
+            Ok(size) => size,
+            Err(_) => return Ok(None), // End of file
+        };
+        pos += 8;
 
-        if chunk_id == "LIST" {
+        // Validate chunk size
+        if chunk_size > file_size {
+            return Err("Invalid chunk size".into());
+        }
+
+        if chunk_id == "LIST" && chunk_size >= 4 {
             let list_type = read_fourcc(&mut reader)?;
             if list_type == "INFO" {
                 // Parse INFO chunk
                 return parse_info_chunk(&mut reader, chunk_size - 4);
             }
+            // Skip the rest of this LIST chunk
+            reader.seek(SeekFrom::Current((chunk_size - 4) as i64))?;
+            pos += chunk_size as u64;
+        } else {
+            // Skip this chunk
+            reader.seek(SeekFrom::Current(chunk_size as i64))?;
+            pos += chunk_size as u64;
         }
 
-        // Skip this chunk
-        reader.seek(SeekFrom::Current(chunk_size as i64))?;
         // Pad byte if chunk size is odd
         if chunk_size % 2 == 1 {
             reader.seek(SeekFrom::Current(1))?;
+            pos += 1;
         }
     }
+
+    Ok(None) // No INFO chunk found
 }
 
 /// Parse INFO chunk to extract ZIM metadata

@@ -14,6 +14,17 @@ pub fn handle_tag_edit(
     project: Option<String>,
     no_backup: bool,
 ) -> Result<(), Box<dyn Error>> {
+    // Validate path length (typical filesystem limit)
+    const MAX_PATH_LENGTH: usize = 4096;
+    if file.len() > MAX_PATH_LENGTH {
+        return Err(format!(
+            "{} Path too long (max {} characters)",
+            "Error:".red().bold(),
+            MAX_PATH_LENGTH
+        )
+        .into());
+    }
+
     let path = Path::new(file);
 
     if !path.exists() {
@@ -121,6 +132,17 @@ pub fn handle_tag_edit(
 }
 
 pub fn handle_tag(file: &str, project: Option<String>) -> Result<(), Box<dyn Error>> {
+    // Validate path length
+    const MAX_PATH_LENGTH: usize = 4096;
+    if file.len() > MAX_PATH_LENGTH {
+        return Err(format!(
+            "{} Path too long (max {} characters)",
+            "Error:".red().bold(),
+            MAX_PATH_LENGTH
+        )
+        .into());
+    }
+
     let path = Path::new(file);
 
     if !path.exists() {
