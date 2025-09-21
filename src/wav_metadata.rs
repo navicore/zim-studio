@@ -87,6 +87,18 @@ fn write_u32_le(writer: &mut impl Write, value: u32) -> Result<(), Box<dyn Error
 
 /// Calculate MD5 of audio data in a WAV file
 pub fn calculate_audio_md5(path: &Path) -> Result<String, Box<dyn Error>> {
+    // Security: Check file size before processing
+    const MAX_WAV_SIZE: u64 = 4 * 1024 * 1024 * 1024; // 4GB max
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_WAV_SIZE {
+        return Err(format!(
+            "File too large: {} bytes (max: {} bytes)",
+            metadata.len(),
+            MAX_WAV_SIZE
+        )
+        .into());
+    }
+
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
@@ -97,6 +109,12 @@ pub fn calculate_audio_md5(path: &Path) -> Result<String, Box<dyn Error>> {
     }
 
     let file_size = read_u32_le(&mut reader)?;
+
+    // Security: Validate file size matches actual file
+    if file_size as u64 + 8 != metadata.len() {
+        return Err("Invalid RIFF size field".into());
+    }
+
     let wave_id = read_fourcc(&mut reader)?;
     if wave_id != "WAVE" {
         return Err("Not a WAVE file".into());
@@ -118,12 +136,21 @@ pub fn calculate_audio_md5(path: &Path) -> Result<String, Box<dyn Error>> {
         };
         pos += 8;
 
-        // Validate chunk size
+        // Security: Validate chunk size more thoroughly
         if chunk_size > file_size {
-            return Err("Invalid chunk size".into());
+            return Err("Invalid chunk size: exceeds file size".into());
+        }
+        if chunk_size as u64 > max_pos - pos {
+            return Err("Invalid chunk size: exceeds remaining file space".into());
         }
 
         if chunk_id == "data" {
+            // Security: Limit data chunk size to prevent excessive memory use
+            const MAX_DATA_CHUNK: u32 = 2 * 1024 * 1024 * 1024; // 2GB max data
+            if chunk_size > MAX_DATA_CHUNK {
+                return Err(format!("Data chunk too large: {chunk_size} bytes").into());
+            }
+
             // Calculate MD5 using chunked reading for large files
             let mut context = md5::Context::new();
 
@@ -160,6 +187,18 @@ pub fn calculate_audio_md5(path: &Path) -> Result<String, Box<dyn Error>> {
 
 /// Read ZIM metadata from WAV file's INFO chunk
 pub fn read_metadata(path: &Path) -> Result<Option<ZimMetadata>, Box<dyn Error>> {
+    // Security: Check file size before processing
+    const MAX_WAV_SIZE: u64 = 4 * 1024 * 1024 * 1024; // 4GB max
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() > MAX_WAV_SIZE {
+        return Err(format!(
+            "File too large: {} bytes (max: {} bytes)",
+            metadata.len(),
+            MAX_WAV_SIZE
+        )
+        .into());
+    }
+
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
@@ -226,12 +265,27 @@ fn parse_info_chunk(
     reader: &mut impl Read,
     size: u32,
 ) -> Result<Option<ZimMetadata>, Box<dyn Error>> {
+    // Security: Limit INFO chunk size
+    const MAX_INFO_SIZE: u32 = 1024 * 1024; // 1MB max for INFO chunk
+    if size > MAX_INFO_SIZE {
+        return Err(format!("INFO chunk too large: {size} bytes").into());
+    }
+
     let mut bytes_read = 0u32;
     let mut zim_data = String::new();
 
     while bytes_read < size {
         let field_id = read_fourcc(reader)?;
         let field_size = read_u32_le(reader)?;
+
+        // Security: Validate field size
+        if field_size > size - bytes_read {
+            return Err("Invalid INFO field size".into());
+        }
+        if field_size > 65536 {
+            // 64KB max per field
+            return Err(format!("INFO field too large: {field_size} bytes").into());
+        }
 
         let mut field_data = vec![0u8; field_size as usize];
         reader.read_exact(&mut field_data)?;

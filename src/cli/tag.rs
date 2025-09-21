@@ -107,21 +107,38 @@ pub fn handle_tag_edit(
         );
     }
 
-    // Create temp file first for safety
-    let temp_path = path.with_extension("wav.tmp");
+    // Security: Create temp file in same directory with random name
+    let temp_filename = format!(
+        ".zim-temp-{}-{}.wav",
+        std::process::id(),
+        uuid::Uuid::new_v4().simple()
+    );
+    let temp_path = path.parent().unwrap_or(Path::new(".")).join(&temp_filename);
 
     // Write metadata to temp file
-    wav_metadata::write_metadata(path, &temp_path, &metadata)?;
-
-    // Verify temp file is valid by trying to read its metadata
-    if wav_metadata::read_metadata(&temp_path)?.is_none() {
-        // Clean up temp file and restore from backup if available
-        std::fs::remove_file(&temp_path)?;
-        return Err("Failed to write metadata correctly".into());
+    let write_result = wav_metadata::write_metadata(path, &temp_path, &metadata);
+    if let Err(e) = write_result {
+        // Security: Clean up temp file on error
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(e);
     }
 
-    // Replace original with temp file
-    std::fs::rename(&temp_path, path)?;
+    // Verify temp file is valid by trying to read its metadata
+    match wav_metadata::read_metadata(&temp_path) {
+        Ok(Some(_)) => {
+            // Success - replace original with temp file
+            // Security: Use atomic rename to prevent partial writes
+            if let Err(e) = std::fs::rename(&temp_path, path) {
+                let _ = std::fs::remove_file(&temp_path);
+                return Err(format!("Failed to replace original file: {e}").into());
+            }
+        }
+        _ => {
+            // Clean up temp file
+            let _ = std::fs::remove_file(&temp_path);
+            return Err("Failed to write metadata correctly".into());
+        }
+    }
 
     println!("{} File updated in-place", "✓".green().bold());
     println!("  {} Project: {}", "→".bright_black(), project_name.green());
@@ -181,7 +198,17 @@ pub fn handle_tag(file: &str, project: Option<String>) -> Result<(), Box<dyn Err
 
     // Create output filename (same name with _tagged suffix)
     let stem = path.file_stem().unwrap().to_string_lossy();
-    let output_path = path.with_file_name(format!("{stem}_tagged.wav"));
+    let output_filename = format!("{stem}_tagged.wav");
+
+    // Security: Validate output filename
+    if output_filename.contains("..")
+        || output_filename.contains('/')
+        || output_filename.contains('\\')
+    {
+        return Err("Invalid output filename".into());
+    }
+
+    let output_path = path.with_file_name(output_filename);
 
     // Write metadata
     wav_metadata::write_metadata(path, &output_path, &metadata)?;
