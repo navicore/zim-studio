@@ -11,6 +11,7 @@ pub struct SidecarMetadata<'a> {
     pub file_size: u64,
     pub modified: Option<&'a str>,
     pub project: Option<&'a str>,
+    pub uuid: Option<&'a str>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -23,6 +24,7 @@ pub fn generate_minimal_sidecar_with_fs_metadata(
     file_size: u64,
     modified: Option<&str>,
     project: Option<&str>,
+    uuid: Option<&str>,
 ) -> String {
     let modified_str = modified.unwrap_or("unknown");
     let project_str = project.unwrap_or("unknown");
@@ -34,12 +36,19 @@ pub fn generate_minimal_sidecar_with_fs_metadata(
         format!("[\"{}\"]", tags.join("\", \""))
     };
 
+    // Include UUID if available
+    let uuid_line = if let Some(id) = uuid {
+        format!("uuid: \"{id}\"\n")
+    } else {
+        String::new()
+    };
+
     format!(
         r#"---
 file: "{file_name}"
 path: "{file_path}"
 project: "{project_str}"
-title: "{title}"
+{uuid_line}title: "{title}"
 description: "{description}"
 file_size: {file_size}
 modified: "{modified_str}"
@@ -70,12 +79,19 @@ pub fn generate_audio_sidecar_with_metadata(metadata: &SidecarMetadata) -> Strin
         format!("[\"{}\"]", metadata.tags.join("\", \""))
     };
 
+    // Include UUID if available
+    let uuid_line = if let Some(id) = metadata.uuid {
+        format!("uuid: \"{id}\"\n")
+    } else {
+        String::new()
+    };
+
     format!(
         r#"---
 file: "{}"
 path: "{}"
 project: "{project_str}"
-title: "{}"
+{uuid_line}title: "{}"
 description: "{}"
 duration: {duration_str}
 sample_rate: {}
@@ -117,6 +133,7 @@ mod tests {
             1234567,
             Some("2024-01-15 10:30:00 UTC"),
             Some("my-project"),
+            None, // No UUID for this test
         );
 
         assert!(content.contains("file: \"test.mp3\""));
@@ -142,6 +159,7 @@ mod tests {
             999,
             None,
             None,
+            None, // No UUID for this test
         );
 
         assert!(content.contains("modified: \"unknown\""));
@@ -163,6 +181,7 @@ mod tests {
             file_size: 5432100,
             modified: Some("2024-01-15 10:30:00 UTC"),
             project: Some("awesome-project"),
+            uuid: Some("test-uuid-12345"),
         };
 
         let content = generate_audio_sidecar_with_metadata(&metadata);
@@ -170,6 +189,7 @@ mod tests {
         assert!(content.contains("file: \"audio.wav\""));
         assert!(content.contains("path: \"/music/audio.wav\""));
         assert!(content.contains("project: \"awesome-project\""));
+        assert!(content.contains("uuid: \"test-uuid-12345\""));
         assert!(content.contains("title: \"audio\""));
         assert!(content.contains("description: \"A mix for awesome-project\""));
         assert!(content.contains("tags: [\"mix\"]"));
@@ -196,6 +216,7 @@ mod tests {
             file_size: 1000000,
             modified: None,
             project: None,
+            uuid: None,
         };
 
         let content = generate_audio_sidecar_with_metadata(&metadata);
@@ -216,6 +237,7 @@ mod tests {
             1000,
             None,
             None,
+            None, // No UUID for this test
         );
 
         // Check YAML frontmatter delimiters

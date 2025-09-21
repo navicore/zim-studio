@@ -25,6 +25,7 @@ mod config;
 mod media;
 mod project;
 mod templates;
+mod wav_metadata;
 
 #[cfg(feature = "player")]
 mod player;
@@ -88,6 +89,11 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Tag WAV files with ZIM metadata
+    Tag {
+        #[command(subcommand)]
+        action: TagAction,
+    },
     /// Play audio files with integrated player (supports mixing up to 3 files)
     Play {
         /// Audio file paths (up to 3 files for mixing)
@@ -105,6 +111,44 @@ enum Commands {
         /// Start interactive mode for browsing and playing
         #[arg(short, long)]
         interactive: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum TagAction {
+    /// Add metadata to a WAV file (creates _tagged copy)
+    Add {
+        /// WAV file to tag
+        file: String,
+        /// Project name (auto-detected if not provided)
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Edit metadata in-place (updates original file)
+    Edit {
+        /// WAV file to tag
+        file: String,
+        /// Project name (auto-detected if not provided)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Skip backup file creation
+        #[arg(long)]
+        no_backup: bool,
+    },
+    /// Read metadata from a WAV file
+    Info {
+        /// WAV file to read
+        file: String,
+    },
+    /// Create a derived WAV file with lineage tracking
+    Derive {
+        /// Input WAV file
+        input: String,
+        /// Output WAV file
+        output: String,
+        /// Type of transformation (e.g., "excerpt", "mix", "master")
+        #[arg(short, long, default_value = "process")]
+        transform: String,
     },
 }
 
@@ -179,6 +223,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::Sync { path } => {
             cli::sync::handle_sync(&path)?;
         }
+        Commands::Tag { action } => match action {
+            TagAction::Add { file, project } => {
+                cli::tag::handle_tag(&file, project)?;
+            }
+            TagAction::Edit {
+                file,
+                project,
+                no_backup,
+            } => {
+                cli::tag::handle_tag_edit(&file, project, no_backup)?;
+            }
+            TagAction::Info { file } => {
+                cli::tag::handle_tag_info(&file)?;
+            }
+            TagAction::Derive {
+                input,
+                output,
+                transform,
+            } => {
+                cli::tag::handle_tag_derive(&input, &output, &transform)?;
+            }
+        },
         Commands::Play {
             files,
             gains,
