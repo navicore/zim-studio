@@ -89,6 +89,11 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Add metadata to sidecar files
+    Add {
+        #[command(subcommand)]
+        action: AddAction,
+    },
     /// Tag WAV files with ZIM metadata
     Tag {
         #[command(subcommand)]
@@ -111,6 +116,21 @@ enum Commands {
         /// Start interactive mode for browsing and playing
         #[arg(short, long)]
         interactive: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum AddAction {
+    /// Add tags to sidecar files
+    Tag {
+        /// Path to sidecar file (.md) or directory
+        path: String,
+        /// Tags to add
+        #[arg(short = 't', long = "tag", action = clap::ArgAction::Append, required = true)]
+        tags: Vec<String>,
+        /// Recursively process subdirectories
+        #[arg(short = 'r', long = "recursive")]
+        recursive: bool,
     },
 }
 
@@ -223,6 +243,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::Sync { path } => {
             cli::sync::handle_sync(&path)?;
         }
+        Commands::Add { action } => match action {
+            AddAction::Tag {
+                path,
+                tags,
+                recursive,
+            } => {
+                cli::add::handle_add_tag(&path, &tags, recursive)?;
+            }
+        },
         Commands::Tag { action } => match action {
             TagAction::Add { file, project } => {
                 cli::tag::handle_tag(&file, project)?;
