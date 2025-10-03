@@ -2,6 +2,12 @@
 //!
 //! This module provides parallelized directory traversal using rayon to significantly
 //! speed up operations when processing directories with many files.
+//!
+//! # Note on Ordering
+//!
+//! When parallel processing is enabled (multiple subdirectories), the order of results
+//! is non-deterministic. This is acceptable for audio file collection where order doesn't
+//! matter, but should be considered if used for other purposes.
 
 use crate::zimignore::ZimIgnore;
 use rayon::prelude::*;
@@ -80,7 +86,11 @@ fn scan_directory_parallel(
         }
 
         if path.is_dir() {
-            let dir_name = path.file_name().unwrap().to_string_lossy();
+            // Use safer path handling instead of unwrap()
+            let dir_name = match path.file_name() {
+                Some(name) => name.to_string_lossy(),
+                None => continue, // Skip paths without a valid file name
+            };
             if !should_skip_directory(&dir_name) {
                 directories.push(path);
             }
@@ -100,9 +110,24 @@ fn scan_directory_parallel(
     // Process subdirectories in parallel if there are multiple directories
     if directories.len() > 1 {
         // Parallel processing for multiple directories
+        // Note: Errors during parallel traversal are logged to stderr but don't halt
+        // the entire scan. This allows processing of accessible directories to continue
+        // even if some encounter permission issues or network problems.
         let nested_files: Vec<Vec<PathBuf>> = directories
             .par_iter()
-            .filter_map(|subdir| collect_audio_files(subdir, audio_exts, zimignore).ok())
+            .filter_map(
+                |subdir| match collect_audio_files(subdir, audio_exts, zimignore) {
+                    Ok(files) => Some(files),
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to scan directory '{}': {}",
+                            subdir.display(),
+                            e
+                        );
+                        None
+                    }
+                },
+            )
             .collect();
 
         // Merge results
