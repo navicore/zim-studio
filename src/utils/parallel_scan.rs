@@ -35,6 +35,14 @@ pub fn should_skip_directory(name: &str) -> bool {
 /// This function recursively scans directories in parallel for better performance
 /// on large directory structures.
 ///
+/// # Error Handling
+///
+/// Errors encountered while scanning subdirectories (e.g., permission denied, I/O errors)
+/// are logged to stderr but do not stop the scan. This allows the function to continue
+/// processing accessible directories and return all files that could be read.
+///
+/// This behavior is consistent across both parallel and sequential code paths.
+///
 /// # Arguments
 ///
 /// * `dir` - Root directory to start scanning from
@@ -43,7 +51,7 @@ pub fn should_skip_directory(name: &str) -> bool {
 ///
 /// # Returns
 ///
-/// Vector of PathBufs for all matching files found
+/// Vector of PathBufs for all matching files found in accessible directories
 pub fn collect_audio_files(
     dir: &Path,
     audio_exts: &HashSet<&str>,
@@ -136,8 +144,15 @@ fn scan_directory_parallel(
         }
     } else {
         // Sequential processing for single directory (avoid overhead)
+        // Error handling is consistent with parallel path: log errors but continue
         for subdir in directories {
-            scan_directory_parallel(&subdir, audio_exts, zimignore, files)?;
+            if let Err(e) = scan_directory_parallel(&subdir, audio_exts, zimignore, files) {
+                eprintln!(
+                    "Warning: Failed to scan directory '{}': {}",
+                    subdir.display(),
+                    e
+                );
+            }
         }
     }
 
