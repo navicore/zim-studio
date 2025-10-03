@@ -12,11 +12,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use zim_studio::utils::parallel_scan;
 use zim_studio::zimignore::ZimIgnore;
 
 // Constants
 const AUDIO_EXTENSIONS: &[&str] = &["wav", "flac", "aiff", "mp3", "m4a"];
-const SKIP_DIRECTORIES: &[&str] = &["node_modules", ".git", "temp"];
 const SPINNER_CHARS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SIDECAR_EXTENSION: &str = "md";
 
@@ -48,12 +48,15 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     // Load .zimignore files for this directory hierarchy
     let zimignore = ZimIgnore::load_for_directory(project_path);
 
-    // First, count total audio files
+    // Collect all audio files using parallel scanning
     let spinner = create_progress_spinner();
-    spinner.set_message("Counting audio files...");
+    spinner.set_message("Scanning for audio files...");
 
-    let total_files = count_audio_files(project_path, &audio_extensions, &zimignore)?;
+    let audio_files =
+        parallel_scan::collect_audio_files(project_path, &audio_extensions, &zimignore)?;
     spinner.finish_and_clear();
+
+    let total_files = audio_files.len();
 
     if total_files == 0 {
         println!("{} No audio files found in project", "⚠".yellow());
@@ -77,18 +80,25 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     let pb = multi.add(create_progress_bar(total_files as u64));
     pb.set_message("Processing audio files...");
 
-    // Walk the directory tree
-    scan_directory(
-        project_path,
-        &audio_extensions,
-        &zimignore,
-        &created_count,
-        &skipped_count,
-        &updated_count,
-        &pb,
-        &project_cache,
-        &config,
-    )?;
+    // Process files sequentially but with parallel scanning already done
+    // (Processing itself involves I/O and user interaction which can't be parallelized)
+    for file_path in &audio_files {
+        let result = process_media_file(
+            file_path,
+            &created_count,
+            &skipped_count,
+            &updated_count,
+            &pb,
+            &project_cache,
+            &config,
+        );
+
+        if let Err(e) = result {
+            eprintln!("{} {}", "Error:".red(), e);
+        }
+
+        pb.inc(1);
+    }
 
     pb.finish_with_message("Done");
 
@@ -97,120 +107,6 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     let skipped = *skipped_count.lock().unwrap();
 
     print_update_summary(created, updated, skipped);
-
-    Ok(())
-}
-
-fn count_audio_files(
-    dir: &Path,
-    audio_exts: &HashSet<&str>,
-    zimignore: &ZimIgnore,
-) -> Result<u32, Box<dyn Error>> {
-    let mut count = 0;
-    let entries = fs::read_dir(dir)?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        if is_hidden_file(&path) {
-            continue;
-        }
-
-        // Check if this path should be ignored by .zimignore
-        if zimignore.is_ignored(&path, path.is_dir()) {
-            continue;
-        }
-
-        if path.is_dir() {
-            let dir_name = path.file_name().unwrap().to_string_lossy();
-            if should_skip_directory(&dir_name) {
-                continue;
-            }
-            count += count_audio_files(&path, audio_exts, zimignore)?;
-        } else if path.is_file()
-            && let Some(extension) = path.extension()
-        {
-            let ext = extension.to_string_lossy().to_lowercase();
-            if audio_exts.contains(ext.as_str()) {
-                count += 1;
-            }
-        }
-    }
-
-    Ok(count)
-}
-
-#[allow(clippy::too_many_arguments)]
-// TODO: Consider parallelizing directory scanning for large projects
-// This could be implemented using rayon or a thread pool in a future PR
-// to improve performance when processing directories with many files
-fn scan_directory(
-    dir: &Path,
-    audio_exts: &HashSet<&str>,
-    zimignore: &ZimIgnore,
-    created: &Arc<Mutex<u32>>,
-    skipped: &Arc<Mutex<u32>>,
-    updated: &Arc<Mutex<u32>>,
-    pb: &ProgressBar,
-    project_cache: &Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
-    config: &Arc<Config>,
-) -> Result<(), Box<dyn Error>> {
-    let entries = fs::read_dir(dir)?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Skip hidden files and directories
-        if is_hidden_file(&path) {
-            continue;
-        }
-
-        // Check if this path should be ignored by .zimignore
-        if zimignore.is_ignored(&path, path.is_dir()) {
-            continue;
-        }
-
-        if path.is_dir() {
-            // Skip certain directories
-            let dir_name = path.file_name().unwrap().to_string_lossy();
-            if should_skip_directory(&dir_name) {
-                continue;
-            }
-
-            // Recurse into subdirectory
-            scan_directory(
-                &path,
-                audio_exts,
-                zimignore,
-                created,
-                skipped,
-                updated,
-                pb,
-                project_cache,
-                config,
-            )?;
-        } else if path.is_file() {
-            // Check if this is an audio file
-            if let Some(extension) = path.extension() {
-                let ext = extension.to_string_lossy().to_lowercase();
-
-                if audio_exts.contains(ext.as_str()) {
-                    process_media_file(
-                        &path,
-                        created,
-                        skipped,
-                        updated,
-                        pb,
-                        project_cache,
-                        config,
-                    )?;
-                    pb.inc(1);
-                }
-            }
-        }
-    }
 
     Ok(())
 }
@@ -459,17 +355,6 @@ fn get_sidecar_path(media_path: &Path) -> PathBuf {
     let new_name = format!("{current_name}.{SIDECAR_EXTENSION}");
     sidecar_path.set_file_name(new_name);
     sidecar_path
-}
-
-// Helper functions
-fn should_skip_directory(name: &str) -> bool {
-    SKIP_DIRECTORIES.contains(&name)
-}
-
-fn is_hidden_file(path: &Path) -> bool {
-    path.file_name()
-        .map(|name| name.to_string_lossy().starts_with('.'))
-        .unwrap_or(false)
 }
 
 fn create_progress_spinner() -> ProgressBar {
@@ -898,20 +783,20 @@ mod tests {
 
     #[test]
     fn test_should_skip_directory() {
-        assert!(should_skip_directory("node_modules"));
-        assert!(should_skip_directory(".git"));
-        assert!(should_skip_directory("temp"));
-        assert!(!should_skip_directory("src"));
-        assert!(!should_skip_directory("audio"));
+        assert!(parallel_scan::should_skip_directory("node_modules"));
+        assert!(parallel_scan::should_skip_directory(".git"));
+        assert!(parallel_scan::should_skip_directory("temp"));
+        assert!(!parallel_scan::should_skip_directory("src"));
+        assert!(!parallel_scan::should_skip_directory("audio"));
     }
 
     #[test]
     fn test_is_hidden_file() {
-        assert!(is_hidden_file(Path::new(".hidden")));
-        assert!(is_hidden_file(Path::new("/path/.hidden")));
-        assert!(is_hidden_file(Path::new(".DS_Store")));
-        assert!(!is_hidden_file(Path::new("visible")));
-        assert!(!is_hidden_file(Path::new("/path/visible")));
+        assert!(parallel_scan::is_hidden_file(Path::new(".hidden")));
+        assert!(parallel_scan::is_hidden_file(Path::new("/path/.hidden")));
+        assert!(parallel_scan::is_hidden_file(Path::new(".DS_Store")));
+        assert!(!parallel_scan::is_hidden_file(Path::new("visible")));
+        assert!(!parallel_scan::is_hidden_file(Path::new("/path/visible")));
     }
 
     #[test]
@@ -947,8 +832,9 @@ mod tests {
         let extensions: HashSet<&str> = AUDIO_EXTENSIONS.iter().cloned().collect();
 
         let zimignore = ZimIgnore::new();
-        let count = count_audio_files(temp_dir.path(), &extensions, &zimignore).unwrap();
-        assert_eq!(count, 0);
+        let files =
+            parallel_scan::collect_audio_files(temp_dir.path(), &extensions, &zimignore).unwrap();
+        assert_eq!(files.len(), 0);
     }
 
     #[test]
@@ -966,8 +852,9 @@ mod tests {
         fs::write(temp_dir.path().join("README.md"), b"fake").unwrap();
 
         let zimignore = ZimIgnore::new();
-        let count = count_audio_files(temp_dir.path(), &extensions, &zimignore).unwrap();
-        assert_eq!(count, 3);
+        let files =
+            parallel_scan::collect_audio_files(temp_dir.path(), &extensions, &zimignore).unwrap();
+        assert_eq!(files.len(), 3);
     }
 
     #[test]
@@ -980,8 +867,9 @@ mod tests {
         fs::write(temp_dir.path().join(".hidden.wav"), b"fake").unwrap();
 
         let zimignore = ZimIgnore::new();
-        let count = count_audio_files(temp_dir.path(), &extensions, &zimignore).unwrap();
-        assert_eq!(count, 1);
+        let files =
+            parallel_scan::collect_audio_files(temp_dir.path(), &extensions, &zimignore).unwrap();
+        assert_eq!(files.len(), 1);
     }
 
     #[test]
@@ -1000,8 +888,9 @@ mod tests {
         fs::write(skip_dir.join("test.wav"), b"fake").unwrap();
 
         let zimignore = ZimIgnore::new();
-        let count = count_audio_files(temp_dir.path(), &extensions, &zimignore).unwrap();
-        assert_eq!(count, 1); // Only from normal_dir
+        let files =
+            parallel_scan::collect_audio_files(temp_dir.path(), &extensions, &zimignore).unwrap();
+        assert_eq!(files.len(), 1); // Only from normal_dir
     }
 
     #[test]

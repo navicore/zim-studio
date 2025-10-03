@@ -1,17 +1,18 @@
 use crate::media::metadata::read_audio_metadata;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
+use rayon::prelude::*;
 use serde_yaml;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use zim_studio::utils::parallel_scan;
 use zim_studio::zimignore::ZimIgnore;
 
 // Constants
 const AUDIO_EXTENSIONS: &[&str] = &["wav", "flac", "aiff", "mp3", "m4a"];
-const SKIP_DIRECTORIES: &[&str] = &["node_modules", ".git", "temp"];
 
 pub fn handle_sync(project_path: &str) -> Result<(), Box<dyn Error>> {
     let project_path = Path::new(project_path);
@@ -103,62 +104,23 @@ fn find_files_to_sync(
     audio_exts: &HashSet<&str>,
     zimignore: &ZimIgnore,
 ) -> Result<Vec<(PathBuf, PathBuf)>, Box<dyn Error>> {
-    let mut files_to_sync = Vec::new();
-    scan_for_sync(dir, audio_exts, zimignore, &mut files_to_sync)?;
-    Ok(files_to_sync)
-}
+    // Use parallel scanning to collect all audio files
+    let audio_files = parallel_scan::collect_audio_files(dir, audio_exts, zimignore)?;
 
-// TODO: Consider parallelizing directory scanning for large projects
-// Similar to the update command, this could benefit from parallel processing
-// using rayon or a thread pool to improve performance on large directory trees
-fn scan_for_sync(
-    dir: &Path,
-    audio_exts: &HashSet<&str>,
-    zimignore: &ZimIgnore,
-    files_to_sync: &mut Vec<(PathBuf, PathBuf)>,
-) -> Result<(), Box<dyn Error>> {
-    let entries = fs::read_dir(dir)?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Skip hidden files and directories
-        if is_hidden_file(&path) {
-            continue;
-        }
-
-        // Check if this path should be ignored by .zimignore
-        if zimignore.is_ignored(&path, path.is_dir()) {
-            continue;
-        }
-
-        if path.is_dir() {
-            // Skip certain directories
-            let dir_name = path.file_name().unwrap().to_string_lossy();
-            if should_skip_directory(&dir_name) {
-                continue;
+    // Filter to only files that have sidecars (in parallel)
+    let files_with_sidecars: Vec<(PathBuf, PathBuf)> = audio_files
+        .par_iter()
+        .filter_map(|audio_path| {
+            let sidecar_path = get_sidecar_path(audio_path);
+            if sidecar_path.exists() {
+                Some((audio_path.clone(), sidecar_path))
+            } else {
+                None
             }
+        })
+        .collect();
 
-            // Recurse into subdirectory
-            scan_for_sync(&path, audio_exts, zimignore, files_to_sync)?;
-        } else if path.is_file() {
-            // Check if this is an audio file
-            if let Some(extension) = path.extension() {
-                let ext = extension.to_string_lossy().to_lowercase();
-
-                if audio_exts.contains(ext.as_str()) {
-                    // Check if sidecar exists
-                    let sidecar_path = get_sidecar_path(&path);
-                    if sidecar_path.exists() {
-                        files_to_sync.push((path.clone(), sidecar_path));
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
+    Ok(files_with_sidecars)
 }
 
 fn sync_sidecar_metadata(audio_path: &Path, sidecar_path: &Path) -> Result<bool, Box<dyn Error>> {
@@ -268,16 +230,6 @@ fn get_sidecar_path(media_path: &Path) -> PathBuf {
     let new_name = format!("{current_name}.md");
     sidecar_path.set_file_name(new_name);
     sidecar_path
-}
-
-fn should_skip_directory(name: &str) -> bool {
-    SKIP_DIRECTORIES.contains(&name)
-}
-
-fn is_hidden_file(path: &Path) -> bool {
-    path.file_name()
-        .map(|name| name.to_string_lossy().starts_with('.'))
-        .unwrap_or(false)
 }
 
 fn create_progress_spinner() -> ProgressBar {
