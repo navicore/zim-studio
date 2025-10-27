@@ -13,12 +13,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use zim_studio::utils::parallel_scan;
+use zim_studio::utils::sidecar::get_sidecar_path;
 use zim_studio::zimignore::ZimIgnore;
 
 // Constants
 const AUDIO_EXTENSIONS: &[&str] = &["wav", "flac", "aiff", "mp3", "m4a"];
 const SPINNER_CHARS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SIDECAR_EXTENSION: &str = "md";
 
 pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     let project_path = Path::new(project_path);
@@ -347,14 +347,6 @@ fn process_media_file(
     *created.lock().unwrap() += 1;
 
     Ok(())
-}
-
-fn get_sidecar_path(media_path: &Path) -> PathBuf {
-    let mut sidecar_path = media_path.to_path_buf();
-    let current_name = sidecar_path.file_name().unwrap().to_string_lossy();
-    let new_name = format!("{current_name}.{SIDECAR_EXTENSION}");
-    sidecar_path.set_file_name(new_name);
-    sidecar_path
 }
 
 fn create_progress_spinner() -> ProgressBar {

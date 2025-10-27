@@ -21,6 +21,7 @@ use super::telemetry::{AudioTelemetry, TelemetryConfig};
 use super::ui;
 use super::waveform::WaveformBuffer;
 use std::sync::mpsc;
+use zim_studio::utils::sidecar::{SidecarCloneMode, clone_sidecar, get_sidecar_path};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ViewMode {
@@ -479,9 +480,20 @@ impl App {
                 // Save selection
                 self.save_selection(current_file, path)
             } else {
-                // Save full file (just copy)
+                // Save full file (copy audio + sidecar)
                 std::fs::copy(current_file, &path)?;
                 info!("Copied full file to: {path:?}");
+
+                // Also create sidecar file for the copy
+                if let Err(e) = clone_sidecar(
+                    std::path::Path::new(current_file),
+                    &path,
+                    SidecarCloneMode::FullCopy,
+                    None,
+                ) {
+                    log::warn!("Failed to create sidecar file: {e}");
+                    // Don't fail the entire operation if sidecar creation fails
+                }
                 Ok(())
             }
         } else {
@@ -516,246 +528,39 @@ impl App {
         };
 
         // If audio save succeeded, try to clone and modify the sidecar file
-        if audio_result.is_ok()
-            && let Err(e) =
-                self.clone_sidecar_for_selection(source_path, &dest_path, mark_in, mark_out)
-        {
-            log::warn!("Failed to create sidecar file: {e}");
-            // Don't fail the entire operation if sidecar creation fails
+        if audio_result.is_ok() {
+            // Convert normalized positions to actual time in seconds
+            let duration_secs = self.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0);
+            let start_time = mark_in * duration_secs;
+            let end_time = mark_out * duration_secs;
+
+            // Get tags from browser as fallback
+            let tags_fallback: Option<Vec<String>> =
+                if let Some((idx, _)) = self.browser.filtered_indices.get(self.browser.selected) {
+                    self.browser
+                        .items
+                        .get(*idx)
+                        .map(|audio_file| audio_file.metadata.tags.clone())
+                } else {
+                    None
+                };
+
+            if let Err(e) = clone_sidecar(
+                std::path::Path::new(source_path),
+                &dest_path,
+                SidecarCloneMode::Selection {
+                    start_time,
+                    end_time,
+                    duration: duration_secs,
+                },
+                tags_fallback.as_deref(),
+            ) {
+                log::warn!("Failed to create sidecar file: {e}");
+                // Don't fail the entire operation if sidecar creation fails
+            }
         }
 
         audio_result
-    }
-
-    fn clone_sidecar_for_selection(
-        &self,
-        source_path: &str,
-        dest_path: &std::path::Path,
-        mark_in: f32,
-        mark_out: f32,
-    ) -> Result<(), Box<dyn Error>> {
-        use std::fs;
-        use std::path::PathBuf;
-
-        // Construct source sidecar path (source_file.ext.md) safely
-        let mut source_sidecar = PathBuf::from(source_path);
-        let mut source_ext = source_sidecar
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_string();
-        source_ext.push_str(".md");
-        source_sidecar.set_extension(source_ext);
-
-        // Construct destination sidecar path (dest_file.ext.md) safely
-        let mut dest_sidecar = dest_path.to_path_buf();
-        let mut dest_ext = dest_sidecar
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_string();
-        dest_ext.push_str(".md");
-        dest_sidecar.set_extension(dest_ext);
-
-        // Calculate time ranges for documentation
-        let duration_seconds = if let Some(duration) = self.duration {
-            duration.as_secs_f32()
-        } else {
-            0.0
-        };
-
-        let start_time = (mark_in * duration_seconds) as u32;
-        let end_time = (mark_out * duration_seconds) as u32;
-        let selection_duration = end_time - start_time;
-
-        let start_mins = start_time / 60;
-        let start_secs = start_time % 60;
-        let end_mins = end_time / 60;
-        let end_secs = end_time % 60;
-        let sel_mins = selection_duration / 60;
-        let sel_secs = selection_duration % 60;
-        let selection_duration_f32 = selection_duration as f32;
-
-        // Simple ISO 8601 timestamp (approximate, good enough for this use case)
-        let timestamp = {
-            use std::process::Command;
-
-            // Use system `date` command for proper ISO 8601 formatting
-            if let Ok(output) = Command::new("date")
-                .arg("-u")
-                .arg("+%Y-%m-%dT%H:%M:%SZ")
-                .output()
-            {
-                String::from_utf8_lossy(&output.stdout).trim().to_string()
-            } else {
-                // Fallback to basic format if date command fails
-                let secs = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                format!("unix-{secs}")
-            }
-        };
-
-        // Get destination file info
-        let dest_filename = dest_path
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("Unknown");
-
-        // Get parent directory path (without filename)
-        let dest_dir = dest_path.parent().and_then(|p| p.to_str()).unwrap_or(".");
-
-        // Get source filename for description
-        let source_filename = std::path::Path::new(source_path)
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("unknown source");
-
-        let content = if source_sidecar.exists() {
-            // Clone existing sidecar and add provenance fields to YAML frontmatter
-            let original_content = fs::read_to_string(&source_sidecar)?;
-
-            if let Some(frontmatter_end) = original_content.find("\n---\n") {
-                // Has YAML frontmatter - parse to extract tags
-                let yaml_section = &original_content[..frontmatter_end];
-                let markdown_section = &original_content[frontmatter_end + 5..]; // Skip "\n---\n"
-
-                // Parse original YAML to get tags
-                let mut tags = vec!["excerpt".to_string()];
-                if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(yaml_section)
-                    && let Some(original_tags) =
-                        yaml_value.get("tags").and_then(|v| v.as_sequence())
-                {
-                    for tag in original_tags {
-                        if let Some(tag_str) = tag.as_str()
-                            && tag_str != "excerpt"
-                            && !tags.contains(&tag_str.to_string())
-                        {
-                            tags.push(tag_str.to_string());
-                        }
-                    }
-                }
-
-                // Format tags as YAML array
-                let tags_yaml = if tags.is_empty() {
-                    "[]".to_string()
-                } else {
-                    format!(
-                        "[{}]",
-                        tags.iter()
-                            .map(|t| format!("\"{t}\""))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                };
-
-                // Build new YAML with correct file/path and merged tags
-                format!(
-                    r#"---
-file: "{dest_filename}"
-path: "{dest_dir}"
-title: "{dest_filename}"
-description: "Excerpt from {source_filename}"
-duration: {selection_duration_f32:.2}
-tags: {tags_yaml}
-source_file: "{source_path}"
-source_time_start: {start_mins}:{start_secs:02}
-source_time_end: {end_mins}:{end_secs:02}
-source_duration: {sel_mins}:{sel_secs:02}
-extracted_at: {timestamp}
-extraction_type: "selection"
----
-
-{markdown_section}"#
-                )
-            } else {
-                // No YAML frontmatter but has content - check if we can infer tags from content
-                // For now, just use "excerpt" tag
-                format!(
-                    r#"---
-file: "{dest_filename}"
-path: "{dest_dir}"
-title: "{dest_filename}"
-description: "Excerpt from {source_filename}"
-duration: {selection_duration_f32:.2}
-tags: ["excerpt"]
-source_file: "{source_path}"
-source_time_start: {start_mins}:{start_secs:02}
-source_time_end: {end_mins}:{end_secs:02}
-source_duration: {sel_mins}:{sel_secs:02}
-extracted_at: {timestamp}
-extraction_type: "selection"
----
-
-{}
-"#,
-                    original_content.trim()
-                )
-            }
-        } else {
-            // No source sidecar - check if we have tags from the browser's current file
-            // Get tags from the current audio file if available
-            let mut tags = vec!["excerpt".to_string()];
-
-            // Try to get tags from the browser's selected file
-            if let Some((idx, _)) = self.browser.filtered_indices.get(self.browser.selected)
-                && let Some(audio_file) = self.browser.items.get(*idx)
-            {
-                for tag in &audio_file.metadata.tags {
-                    if tag != "excerpt" && !tags.contains(tag) {
-                        tags.push(tag.clone());
-                    }
-                }
-            }
-
-            // Format tags as YAML array
-            let tags_yaml = if tags.is_empty() {
-                "[]".to_string()
-            } else {
-                format!(
-                    "[{}]",
-                    tags.iter()
-                        .map(|t| format!("\"{t}\""))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            };
-
-            // Create new sidecar with correct metadata
-            format!(
-                r#"---
-file: "{dest_filename}"
-path: "{dest_dir}"
-title: "{dest_filename}"
-description: "Excerpt from {source_filename}"
-duration: {selection_duration_f32:.2}
-tags: {tags_yaml}
-source_file: "{source_path}"
-source_time_start: {start_mins}:{start_secs:02}
-source_time_end: {end_mins}:{end_secs:02}
-source_duration: {sel_mins}:{sel_secs:02}
-extracted_at: {timestamp}
-extraction_type: "selection"
----
-
-# {dest_filename}
-
-**Excerpt from: {source_filename}**
-
-Time range: {start_mins}:{start_secs:02} - {end_mins}:{end_secs:02} (duration: {sel_mins}:{sel_secs:02})
-
-## Notes
-
-Add your notes and tags here to document this excerpt.
-"#
-            )
-        };
-
-        fs::write(&dest_sidecar, content)?;
-        log::info!("Created sidecar file: {}", dest_sidecar.display());
-
-        Ok(())
     }
 
     fn save_wav_selection(
@@ -938,15 +743,8 @@ Add your notes and tags here to document this excerpt.
             }
         };
 
-        // Construct sidecar path safely using set_extension
-        let mut sidecar_path = PathBuf::from(current_file);
-        let mut new_extension = sidecar_path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_string();
-        new_extension.push_str(".md");
-        sidecar_path.set_extension(new_extension);
+        // Construct sidecar path using utility function
+        let sidecar_path = get_sidecar_path(std::path::Path::new(current_file));
 
         // Check if sidecar exists
         if !sidecar_path.exists() {
