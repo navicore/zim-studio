@@ -1,5 +1,5 @@
 use crate::media::metadata::read_audio_metadata;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::MultiProgress;
 use owo_colors::OwoColorize;
 use rayon::prelude::*;
 use serde_yaml;
@@ -8,24 +8,17 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use zim_studio::constants::AUDIO_EXTENSIONS;
 use zim_studio::utils::parallel_scan;
+use zim_studio::utils::progress::{create_progress_bar, create_progress_spinner};
+use zim_studio::utils::validation::validate_path_exists;
 use zim_studio::zimignore::ZimIgnore;
-
-// Constants
-const AUDIO_EXTENSIONS: &[&str] = &["wav", "flac", "aiff", "mp3", "m4a"];
 
 pub fn handle_sync(project_path: &str) -> Result<(), Box<dyn Error>> {
     let project_path = Path::new(project_path);
 
     // Verify this is a valid project directory
-    if !project_path.exists() {
-        return Err(format!(
-            "{} Path does not exist: {}",
-            "Error:".red().bold(),
-            project_path.display()
-        )
-        .into());
-    }
+    validate_path_exists(project_path)?;
 
     println!(
         "{} {}",
@@ -225,34 +218,7 @@ fn update_yaml_fields(
 }
 
 fn get_sidecar_path(media_path: &Path) -> PathBuf {
-    let mut sidecar_path = media_path.to_path_buf();
-    let current_name = sidecar_path.file_name().unwrap().to_string_lossy();
-    let new_name = format!("{current_name}.md");
-    sidecar_path.set_file_name(new_name);
-    sidecar_path
-}
-
-fn create_progress_spinner() -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-            .template("{spinner:.cyan} {msg}")
-            .unwrap(),
-    );
-    spinner.enable_steady_tick(std::time::Duration::from_millis(80));
-    spinner
-}
-
-fn create_progress_bar(total: u64) -> ProgressBar {
-    let pb = ProgressBar::new(total);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("#>-"),
-    );
-    pb
+    zim_studio::utils::sidecar::get_sidecar_path(media_path)
 }
 
 fn print_sync_summary(synced: u32, skipped: u32, errors: u32) {

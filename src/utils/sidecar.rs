@@ -3,11 +3,10 @@
 //! This module provides functions for constructing sidecar paths and cloning/updating
 //! sidecar files when audio files are copied or excerpted.
 
+use crate::constants::SIDECAR_EXTENSION;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-const SIDECAR_EXTENSION: &str = "md";
 
 /// Constructs the sidecar file path for a given audio file.
 ///
@@ -277,25 +276,13 @@ fn format_tags(tags: &[String]) -> String {
     }
 }
 
-/// Get current timestamp in ISO 8601 format
+/// Get current timestamp in ISO 8601 format using the chrono crate.
+///
+/// This provides cross-platform timestamp generation without relying on
+/// shell commands that may not be available on all systems (e.g., Windows).
 fn get_timestamp() -> String {
-    use std::process::Command;
-
-    // Use system `date` command for proper ISO 8601 formatting
-    if let Ok(output) = Command::new("date")
-        .arg("-u")
-        .arg("+%Y-%m-%dT%H:%M:%SZ")
-        .output()
-    {
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    } else {
-        // Fallback to basic format if date command fails
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        format!("unix-{secs}")
-    }
+    use chrono::Utc;
+    Utc::now().to_rfc3339()
 }
 
 #[cfg(test)]
