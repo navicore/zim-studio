@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::media::metadata::read_audio_metadata;
 use crate::templates::{self, SidecarMetadata};
 use crate::wav_metadata;
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, ProgressBar};
 use owo_colors::OwoColorize;
 use serde_yaml;
 use std::collections::{HashMap, HashSet};
@@ -893,5 +893,4 @@ mod tests {
         assert_eq!(generate_description(None, Some("project")), "");
         assert_eq!(generate_description(None, None), "");
     }
-
 }
