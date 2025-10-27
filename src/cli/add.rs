@@ -7,14 +7,13 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use zim_studio::utils::validation::validate_path_exists;
 
 /// Handle the 'add tag' command
 pub fn handle_add_tag(path: &str, tags: &[String], recursive: bool) -> Result<(), Box<dyn Error>> {
     let path = Path::new(path);
 
-    if !path.exists() {
-        return Err(format!("Path does not exist: {}", path.display()).into());
-    }
+    validate_path_exists(path)?;
 
     let mp = MultiProgress::new();
     let spinner_style = ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")

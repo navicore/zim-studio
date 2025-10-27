@@ -1,15 +1,10 @@
-use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-// Constants
-const SPINNER_CHARS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SKIP_DIRECTORIES: &[&str] = &["node_modules", ".git", "temp"];
-const YAML_DELIMITER: &str = "---\n";
-const SIDECAR_EXTENSION: &str = "md";
+use zim_studio::constants::{SIDECAR_EXTENSION, SKIP_DIRECTORIES, YAML_DELIMITER};
+use zim_studio::utils::{progress::create_progress_spinner, validation::validate_path_exists};
 
 // Type for duration field that can be either a number or "unknown"
 #[derive(Debug, Deserialize)]
@@ -82,14 +77,7 @@ struct SidecarMetadata {
 pub fn handle_lint(project_path: &str) -> Result<(), Box<dyn Error>> {
     let project_path = Path::new(project_path);
 
-    if !project_path.exists() {
-        return Err(format!(
-            "{} Path does not exist: {}",
-            "Error:".red().bold(),
-            project_path.display()
-        )
-        .into());
-    }
+    validate_path_exists(project_path)?;
 
     println!(
         "{} {}",
@@ -237,17 +225,6 @@ fn validate_yaml_frontmatter(path: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 // Helper functions
-fn create_progress_spinner() -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.cyan} {msg}")
-            .unwrap()
-            .tick_strings(SPINNER_CHARS),
-    );
-    spinner
-}
-
 fn should_skip_directory(name: &str) -> bool {
     SKIP_DIRECTORIES.contains(&name)
 }
@@ -509,14 +486,6 @@ Content"#;
             eprintln!("Unexpected error in duration unknown test: {}", e);
         }
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_create_progress_spinner() {
-        let spinner = create_progress_spinner();
-        // Just verify it creates without panicking
-        spinner.set_message("Test message");
-        spinner.finish_and_clear();
     }
 
     #[test]

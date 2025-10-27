@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::media::metadata::read_audio_metadata;
 use crate::templates::{self, SidecarMetadata};
 use crate::wav_metadata;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar};
 use owo_colors::OwoColorize;
 use serde_yaml;
 use std::collections::{HashMap, HashSet};
@@ -12,26 +12,19 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
+use zim_studio::constants::AUDIO_EXTENSIONS;
 use zim_studio::utils::parallel_scan;
+use zim_studio::utils::progress::{create_progress_bar, create_progress_spinner};
+use zim_studio::utils::project::find_project_root;
 use zim_studio::utils::sidecar::get_sidecar_path;
+use zim_studio::utils::validation::validate_path_exists;
 use zim_studio::zimignore::ZimIgnore;
-
-// Constants
-const AUDIO_EXTENSIONS: &[&str] = &["wav", "flac", "aiff", "mp3", "m4a"];
-const SPINNER_CHARS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     let project_path = Path::new(project_path);
 
     // Verify this is a valid project directory
-    if !project_path.exists() {
-        return Err(format!(
-            "{} Path does not exist: {}",
-            "Error:".red().bold(),
-            project_path.display()
-        )
-        .into());
-    }
+    validate_path_exists(project_path)?;
 
     // Load configuration with tag mappings
     let config = Arc::new(Config::load()?);
@@ -111,55 +104,6 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Maximum depth to traverse when looking for project root
-const MAX_PROJECT_TRAVERSAL_DEPTH: usize = 10;
-
-/// Find the project root by looking for the nearest .zimignore file
-///
-/// # Example
-/// ```
-/// // Given a file at: /home/user/projects/my-song/mixes/final.wav
-/// // With .zimignore at: /home/user/projects/my-song/.zimignore
-/// // Returns: Some("my-song")
-/// ```
-fn find_project_root(file_path: &Path) -> Option<String> {
-    // Start from the file's parent directory
-    let mut current = file_path.parent();
-    let mut depth = 0;
-
-    while let Some(dir) = current {
-        // Prevent excessive traversal
-        if depth >= MAX_PROJECT_TRAVERSAL_DEPTH {
-            // Reached maximum depth, stop searching to prevent infinite loops
-            break;
-        }
-        depth += 1;
-
-        let zimignore_path = dir.join(".zimignore");
-        if zimignore_path.exists() {
-            // Found a project root - return its directory name
-            // If this is the current working directory ("."), get the actual directory name
-            if dir == Path::new(".") {
-                // Get the absolute path to get the real directory name
-                if let Ok(abs_path) = std::env::current_dir() {
-                    return abs_path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(|s| s.to_string());
-                }
-            }
-
-            return dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|s| s.to_string());
-        }
-        current = dir.parent();
-    }
-
-    None
-}
-
 /// Extract a clean title from a filename by removing the extension
 fn extract_title_from_filename(filename: &str) -> String {
     // Remove extension(s) - handles cases like "my.song.wav"
@@ -234,29 +178,10 @@ fn determine_file_type(file_path: &Path) -> Option<(String, String)> {
 }
 
 /// Determine whether to use "a" or "an" based on the word
-///
-/// # Example
-/// ```
-/// assert_eq!(get_article("edit"), "an");
-/// assert_eq!(get_article("mix"), "a");
-/// assert_eq!(get_article("source"), "a");
-/// ```
 fn get_article(word: &str) -> &'static str {
-    if word.is_empty() {
-        return "a";
-    }
-
-    // Safe handling of first character
-    let first_char = match word.chars().next() {
-        Some(c) => c.to_ascii_lowercase(),
-        None => return "a",
-    };
-
-    // Check for vowel sounds (simplified - doesn't handle all edge cases)
-    match first_char {
-        'a' | 'e' | 'i' | 'o' | 'u' => "an",
-        // Special cases for words that start with silent 'h'
-        'h' if word.to_lowercase().starts_with("hour") => "an",
+    match word.chars().next() {
+        Some('a' | 'e' | 'i' | 'o' | 'u') => "an",
+        Some('h') if word.to_lowercase().starts_with("hour") => "an",
         _ => "a",
     }
 }
@@ -347,28 +272,6 @@ fn process_media_file(
     *created.lock().unwrap() += 1;
 
     Ok(())
-}
-
-fn create_progress_spinner() -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.cyan} {msg}")
-            .unwrap()
-            .tick_strings(SPINNER_CHARS),
-    );
-    spinner
-}
-
-fn create_progress_bar(total: u64) -> ProgressBar {
-    let pb = ProgressBar::new(total);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.cyan} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("█▓░"),
-    );
-    pb
 }
 
 fn print_update_summary(created: u32, updated: u32, skipped: u32) {
@@ -753,27 +656,6 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_get_sidecar_path() {
-        let path = Path::new("/test/audio.wav");
-        let sidecar = get_sidecar_path(path);
-        assert_eq!(sidecar, Path::new("/test/audio.wav.md"));
-    }
-
-    #[test]
-    fn test_get_sidecar_path_with_multiple_dots() {
-        let path = Path::new("/test/my.audio.file.wav");
-        let sidecar = get_sidecar_path(path);
-        assert_eq!(sidecar, Path::new("/test/my.audio.file.wav.md"));
-    }
-
-    #[test]
-    fn test_get_sidecar_path_no_extension() {
-        let path = Path::new("/test/audiofile");
-        let sidecar = get_sidecar_path(path);
-        assert_eq!(sidecar, Path::new("/test/audiofile.md"));
-    }
-
-    #[test]
     fn test_should_skip_directory() {
         assert!(parallel_scan::should_skip_directory("node_modules"));
         assert!(parallel_scan::should_skip_directory(".git"));
@@ -789,22 +671,6 @@ mod tests {
         assert!(parallel_scan::is_hidden_file(Path::new(".DS_Store")));
         assert!(!parallel_scan::is_hidden_file(Path::new("visible")));
         assert!(!parallel_scan::is_hidden_file(Path::new("/path/visible")));
-    }
-
-    #[test]
-    fn test_create_progress_spinner() {
-        let spinner = create_progress_spinner();
-        // Just verify it creates without panicking
-        spinner.set_message("Test");
-        spinner.finish();
-    }
-
-    #[test]
-    fn test_create_progress_bar() {
-        let pb = create_progress_bar(100);
-        // Just verify it creates without panicking
-        pb.set_position(50);
-        pb.finish();
     }
 
     #[test]
@@ -1026,36 +892,5 @@ mod tests {
         assert_eq!(generate_description(Some("source"), None), "a source");
         assert_eq!(generate_description(None, Some("project")), "");
         assert_eq!(generate_description(None, None), "");
-    }
-
-    #[test]
-    fn test_find_project_root() {
-        use std::fs;
-        use tempfile::TempDir;
-
-        // Create a temporary directory structure
-        let temp_dir = TempDir::new().unwrap();
-        let project_dir = temp_dir.path().join("my-project");
-        let mixes_dir = project_dir.join("mixes");
-        let nested_dir = mixes_dir.join("old");
-
-        fs::create_dir_all(&nested_dir).unwrap();
-        fs::write(project_dir.join(".zimignore"), "# test").unwrap();
-
-        let file_path = nested_dir.join("test.wav");
-        fs::write(&file_path, "").unwrap();
-
-        // Test finding project root
-        let result = find_project_root(&file_path);
-        assert_eq!(result, Some("my-project".to_string()));
-
-        // Test with no .zimignore
-        let orphan_dir = temp_dir.path().join("orphan");
-        fs::create_dir_all(&orphan_dir).unwrap();
-        let orphan_file = orphan_dir.join("test.wav");
-        fs::write(&orphan_file, "").unwrap();
-
-        let result = find_project_root(&orphan_file);
-        assert_eq!(result, None);
     }
 }

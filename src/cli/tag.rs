@@ -8,6 +8,7 @@ use owo_colors::OwoColorize;
 use std::error::Error;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+use zim_studio::utils::project::find_project_root;
 
 pub fn handle_tag_edit(
     file: &str,
@@ -337,46 +338,4 @@ pub fn handle_tag_info(file: &str) -> Result<(), Box<dyn Error>> {
     );
 
     Ok(())
-}
-
-/// Maximum depth to traverse when looking for project root
-const MAX_PROJECT_TRAVERSAL_DEPTH: usize = 10;
-
-/// Find the project root by looking for the nearest .zimignore file
-/// This is a more robust version that handles edge cases better
-fn find_project_root(file_path: &Path) -> Option<String> {
-    // Start from the file's parent directory
-    let mut current = file_path.parent();
-    let mut depth = 0;
-
-    while let Some(dir) = current {
-        // Prevent excessive traversal
-        if depth >= MAX_PROJECT_TRAVERSAL_DEPTH {
-            break;
-        }
-        depth += 1;
-
-        let zimignore_path = dir.join(".zimignore");
-        if zimignore_path.exists() {
-            // Found a project root - return its directory name
-            // If this is the current working directory ("."), get the actual directory name
-            if dir == Path::new(".") {
-                // Get the absolute path to get the real directory name
-                if let Ok(abs_path) = std::env::current_dir() {
-                    return abs_path
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(|s| s.to_string());
-                }
-            }
-
-            return dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|s| s.to_string());
-        }
-        current = dir.parent();
-    }
-
-    None
 }

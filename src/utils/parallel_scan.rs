@@ -9,14 +9,13 @@
 //! is non-deterministic. This is acceptable for audio file collection where order doesn't
 //! matter, but should be considered if used for other purposes.
 
+use crate::constants::SKIP_DIRECTORIES;
 use crate::zimignore::ZimIgnore;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-const SKIP_DIRECTORIES: &[&str] = &["node_modules", ".git", "temp"];
 
 /// Check if a file or directory is hidden (starts with '.')
 pub fn is_hidden_file(path: &Path) -> bool {
