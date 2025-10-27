@@ -167,8 +167,16 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
 
     let mut controls_row2 = Vec::new();
     controls_row2.extend(create_control("i", "in", Style::default().fg(Color::Green)));
-    controls_row2.extend(create_control("o", "out", Style::default().fg(Color::Green)));
-    controls_row2.extend(create_control("x", "clear", Style::default().fg(Color::Yellow)));
+    controls_row2.extend(create_control(
+        "o",
+        "out",
+        Style::default().fg(Color::Green),
+    ));
+    controls_row2.extend(create_control(
+        "x",
+        "clear",
+        Style::default().fg(Color::Yellow),
+    ));
 
     // Loop control has dynamic label
     controls_row2.push(create_control_button("l", loop_style));
@@ -178,17 +186,36 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         " loop  "
     }));
 
-    controls_row2.extend(create_control("s", "save", Style::default().fg(Color::Cyan)));
-    controls_row2.extend(create_control("e", "edit", Style::default().fg(Color::Magenta)));
+    controls_row2.extend(create_control(
+        "s",
+        "save",
+        Style::default().fg(Color::Cyan),
+    ));
+    controls_row2.extend(create_control(
+        "e",
+        "edit",
+        Style::default().fg(Color::Magenta),
+    ));
 
     // Add playlist controls if playlist is active
     if app.playlist.is_some() {
-        controls_row2.extend(create_control("p", "prev", Style::default().fg(Color::Blue)));
-        controls_row2.extend(create_control("n", "next", Style::default().fg(Color::Blue)));
+        controls_row2.extend(create_control(
+            "p",
+            "prev",
+            Style::default().fg(Color::Blue),
+        ));
+        controls_row2.extend(create_control(
+            "n",
+            "next",
+            Style::default().fg(Color::Blue),
+        ));
     }
 
     // Telemetry control has dynamic label
-    controls_row2.push(create_control_button("t", Style::default().fg(Color::Yellow)));
+    controls_row2.push(create_control_button(
+        "t",
+        Style::default().fg(Color::Yellow),
+    ));
     controls_row2.push(Span::raw(if app.telemetry.config().enabled {
         " telemetry ●"
     } else {
