@@ -55,6 +55,7 @@ pub struct App {
     editor_message_timer: Option<std::time::Instant>, // When to clear the message
     pub playlist: Option<Vec<String>>,  // Playlist of files to play sequentially
     pub playlist_index: usize,          // Current position in playlist (0-based)
+    is_loading_track: bool,             // Guard against race conditions during track loading
 }
 
 impl App {
@@ -85,6 +86,7 @@ impl App {
             editor_message_timer: None,
             playlist: None,
             playlist_index: 0,
+            is_loading_track: false,
         }
     }
 
@@ -154,11 +156,25 @@ impl App {
         Ok(())
     }
 
-    /// Load the next track in the playlist
+    /// Load the next track in the playlist.
+    ///
+    /// Advances to the next track in the playlist and begins playback automatically.
+    /// Does nothing if already at the last track or no playlist is active.
+    /// Includes race condition protection to prevent concurrent loading.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the audio file fails to load.
     pub fn load_next_track(&mut self) -> Result<(), Box<dyn Error>> {
+        // Guard against race conditions during track loading
+        if self.is_loading_track {
+            return Ok(());
+        }
+
         if let Some(playlist) = &self.playlist
             && self.playlist_index + 1 < playlist.len()
         {
+            self.is_loading_track = true;
             self.playlist_index += 1;
             let next_file = playlist[self.playlist_index].clone();
             info!(
@@ -167,16 +183,32 @@ impl App {
                 playlist.len(),
                 next_file
             );
-            self.load_file(&next_file)?;
+            let result = self.load_file(&next_file);
+            self.is_loading_track = false;
+            result?;
         }
         Ok(())
     }
 
-    /// Load the previous track in the playlist
+    /// Load the previous track in the playlist.
+    ///
+    /// Goes back to the previous track in the playlist and begins playback automatically.
+    /// Does nothing if already at the first track or no playlist is active.
+    /// Includes race condition protection to prevent concurrent loading.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the audio file fails to load.
     pub fn load_previous_track(&mut self) -> Result<(), Box<dyn Error>> {
+        // Guard against race conditions during track loading
+        if self.is_loading_track {
+            return Ok(());
+        }
+
         if let Some(playlist) = &self.playlist
             && self.playlist_index > 0
         {
+            self.is_loading_track = true;
             self.playlist_index -= 1;
             let prev_file = playlist[self.playlist_index].clone();
             info!(
@@ -185,12 +217,18 @@ impl App {
                 playlist.len(),
                 prev_file
             );
-            self.load_file(&prev_file)?;
+            let result = self.load_file(&prev_file);
+            self.is_loading_track = false;
+            result?;
         }
         Ok(())
     }
 
-    /// Check if there's a next track available
+    /// Check if there's a next track available in the playlist.
+    ///
+    /// # Returns
+    ///
+    /// `true` if there are more tracks after the current position, `false` otherwise.
     pub fn has_next_track(&self) -> bool {
         if let Some(playlist) = &self.playlist {
             self.playlist_index + 1 < playlist.len()
@@ -199,12 +237,21 @@ impl App {
         }
     }
 
-    /// Check if there's a previous track available
+    /// Check if there's a previous track available in the playlist.
+    ///
+    /// # Returns
+    ///
+    /// `true` if there are tracks before the current position, `false` otherwise.
     pub fn has_previous_track(&self) -> bool {
         self.playlist_index > 0
     }
 
-    /// Get current playlist position as a formatted string (e.g., "1/6")
+    /// Get current playlist position as a formatted string.
+    ///
+    /// # Returns
+    ///
+    /// `Some("1/6")` if a playlist is active, `None` otherwise.
+    /// The format is `current_track/total_tracks` (1-indexed).
     pub fn get_playlist_position(&self) -> Option<String> {
         self.playlist
             .as_ref()
