@@ -29,8 +29,7 @@ pub fn handle_play(
                 "Error:".red()
             );
             println!(
-                "For playlist mode, specify files without --gains (up to {} files supported).",
-                MAX_PLAYLIST_SIZE
+                "For playlist mode, specify files without --gains (up to {MAX_PLAYLIST_SIZE} files supported)."
             );
             return Err("Too many files for mixing mode".into());
         }
