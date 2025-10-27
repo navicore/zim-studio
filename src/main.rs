@@ -99,9 +99,9 @@ enum Commands {
         #[command(subcommand)]
         action: TagAction,
     },
-    /// Play audio files with integrated player (supports mixing up to 3 files)
+    /// Play audio files with integrated player (playlist or mixing mode)
     Play {
-        /// Audio file paths (up to 3 files for mixing)
+        /// Audio file paths (playlist: unlimited files, mixing: up to 3 with --gains)
         files: Vec<String>,
         /// Gain levels for each file (comma-separated, e.g., "0.8,1.2,0.6")
         #[arg(

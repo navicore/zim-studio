@@ -18,10 +18,17 @@ pub fn handle_play(
             return Err("No files specified".into());
         }
 
-        if files.len() > 3 {
+        // Check file limit only for mixing mode (when gains are specified)
+        if gains.is_some() && files.len() > 3 {
             use owo_colors::OwoColorize;
-            println!("{} Maximum 3 files supported for mixing.", "Error:".red());
-            return Err("Too many files specified".into());
+            println!(
+                "{} Maximum 3 files supported for mixing mode (with --gains).",
+                "Error:".red()
+            );
+            println!(
+                "For playlist mode, specify files without --gains (unlimited files supported)."
+            );
+            return Err("Too many files for mixing mode".into());
         }
 
         // Validate gains if provided
