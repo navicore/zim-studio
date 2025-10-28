@@ -166,7 +166,7 @@ impl App {
     ///
     /// Returns an error if the audio file fails to load.
     pub fn load_next_track(&mut self) -> Result<(), Box<dyn Error>> {
-        // Guard against race conditions during track loading
+        // Guard against concurrent loading
         if self.is_loading_track {
             return Ok(());
         }
@@ -183,6 +183,8 @@ impl App {
                 playlist.len(),
                 next_file
             );
+
+            // Load file and ensure flag is cleared regardless of outcome
             let result = self.load_file(&next_file);
             self.is_loading_track = false;
             result?;
@@ -200,7 +202,7 @@ impl App {
     ///
     /// Returns an error if the audio file fails to load.
     pub fn load_previous_track(&mut self) -> Result<(), Box<dyn Error>> {
-        // Guard against race conditions during track loading
+        // Guard against concurrent loading
         if self.is_loading_track {
             return Ok(());
         }
@@ -217,6 +219,8 @@ impl App {
                 playlist.len(),
                 prev_file
             );
+
+            // Load file and ensure flag is cleared regardless of outcome
             let result = self.load_file(&prev_file);
             self.is_loading_track = false;
             result?;
@@ -418,6 +422,12 @@ impl App {
 
         // Handle end of track - either stop or advance to next in playlist
         if should_stop {
+            // Don't auto-advance if loop mode is active (user wants to keep looping current track)
+            if self.is_looping {
+                // Loop mode is active - don't advance, just let loop logic handle it
+                return;
+            }
+
             // Check if we have a playlist with more tracks
             if self.has_next_track() {
                 // Auto-advance to next track in playlist
