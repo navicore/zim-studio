@@ -29,8 +29,11 @@ pub fn run(
     } else if files.len() == 1 {
         // Single file playback
         app::run_with_file(Some(&files[0]), None)
-    } else {
-        // Multiple files - mixing mode
+    } else if gains.is_some() {
+        // Multiple files with gains specified - mixing mode (simultaneous playback)
         app::run_with_files(&files, gains)
+    } else {
+        // Multiple files without gains - playlist mode (sequential playback)
+        app::run_with_playlist(&files)
     }
 }

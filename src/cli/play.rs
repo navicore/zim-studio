@@ -1,5 +1,8 @@
 use std::error::Error;
 
+// Maximum playlist size to prevent memory issues
+const MAX_PLAYLIST_SIZE: usize = 1000;
+
 pub fn handle_play(
     files: Vec<String>,
     gains: Option<Vec<f32>>,
@@ -18,10 +21,29 @@ pub fn handle_play(
             return Err("No files specified".into());
         }
 
-        if files.len() > 3 {
+        // Check file limit for mixing mode (when gains are specified)
+        if gains.is_some() && files.len() > 3 {
             use owo_colors::OwoColorize;
-            println!("{} Maximum 3 files supported for mixing.", "Error:".red());
-            return Err("Too many files specified".into());
+            println!(
+                "{} Maximum 3 files supported for mixing mode (with --gains).",
+                "Error:".red()
+            );
+            println!(
+                "For playlist mode, specify files without --gains (up to {MAX_PLAYLIST_SIZE} files supported)."
+            );
+            return Err("Too many files for mixing mode".into());
+        }
+
+        // Check playlist size limit to prevent memory issues
+        if gains.is_none() && files.len() > MAX_PLAYLIST_SIZE {
+            use owo_colors::OwoColorize;
+            println!(
+                "{} Playlist too large: {} files (maximum {} supported).",
+                "Error:".red(),
+                files.len(),
+                MAX_PLAYLIST_SIZE
+            );
+            return Err("Playlist exceeds maximum size".into());
         }
 
         // Validate gains if provided

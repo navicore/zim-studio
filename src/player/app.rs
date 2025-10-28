@@ -53,6 +53,9 @@ pub struct App {
     previous_right_level: f32,          // For slew gate rate calculation
     pub editor_message: Option<String>, // Message to show when editor can't open
     editor_message_timer: Option<std::time::Instant>, // When to clear the message
+    pub playlist: Option<Vec<String>>,  // Playlist of files to play sequentially
+    pub playlist_index: usize,          // Current position in playlist (0-based)
+    is_loading_track: bool,             // Guard against race conditions during track loading
 }
 
 impl App {
@@ -81,6 +84,9 @@ impl App {
             previous_right_level: 0.0,
             editor_message: None,
             editor_message_timer: None,
+            playlist: None,
+            playlist_index: 0,
+            is_loading_track: false,
         }
     }
 
@@ -148,6 +154,112 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Load the next track in the playlist.
+    ///
+    /// Advances to the next track in the playlist and begins playback automatically.
+    /// Does nothing if already at the last track or no playlist is active.
+    /// Includes race condition protection to prevent concurrent loading.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the audio file fails to load.
+    pub fn load_next_track(&mut self) -> Result<(), Box<dyn Error>> {
+        // Guard against concurrent loading
+        if self.is_loading_track {
+            return Ok(());
+        }
+
+        if let Some(playlist) = &self.playlist
+            && self.playlist_index + 1 < playlist.len()
+        {
+            self.is_loading_track = true;
+            self.playlist_index += 1;
+            let next_file = playlist[self.playlist_index].clone();
+            info!(
+                "Loading next track ({}/{}): {}",
+                self.playlist_index + 1,
+                playlist.len(),
+                next_file
+            );
+
+            // Load file and ensure flag is cleared regardless of outcome
+            let result = self.load_file(&next_file);
+            self.is_loading_track = false;
+            result?;
+        }
+        Ok(())
+    }
+
+    /// Load the previous track in the playlist.
+    ///
+    /// Goes back to the previous track in the playlist and begins playback automatically.
+    /// Does nothing if already at the first track or no playlist is active.
+    /// Includes race condition protection to prevent concurrent loading.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the audio file fails to load.
+    pub fn load_previous_track(&mut self) -> Result<(), Box<dyn Error>> {
+        // Guard against concurrent loading
+        if self.is_loading_track {
+            return Ok(());
+        }
+
+        if let Some(playlist) = &self.playlist
+            && self.playlist_index > 0
+        {
+            self.is_loading_track = true;
+            self.playlist_index -= 1;
+            let prev_file = playlist[self.playlist_index].clone();
+            info!(
+                "Loading previous track ({}/{}): {}",
+                self.playlist_index + 1,
+                playlist.len(),
+                prev_file
+            );
+
+            // Load file and ensure flag is cleared regardless of outcome
+            let result = self.load_file(&prev_file);
+            self.is_loading_track = false;
+            result?;
+        }
+        Ok(())
+    }
+
+    /// Check if there's a next track available in the playlist.
+    ///
+    /// # Returns
+    ///
+    /// `true` if there are more tracks after the current position, `false` otherwise.
+    pub fn has_next_track(&self) -> bool {
+        if let Some(playlist) = &self.playlist {
+            self.playlist_index + 1 < playlist.len()
+        } else {
+            false
+        }
+    }
+
+    /// Check if there's a previous track available in the playlist.
+    ///
+    /// # Returns
+    ///
+    /// `true` if there are tracks before the current position, `false` otherwise.
+    pub fn has_previous_track(&self) -> bool {
+        self.playlist_index > 0
+    }
+
+    /// Get current playlist position as a formatted string.
+    ///
+    /// # Returns
+    ///
+    /// `Some("1/6")` if a playlist is active, `None` otherwise.
+    /// The format is `current_track/total_tracks` (1-indexed).
+    pub fn get_playlist_position(&self) -> Option<String> {
+        self.playlist
+            .as_ref()
+            .map(|pl| format!("{}/{}", self.playlist_index + 1, pl.len()))
     }
 
     /// Enable telemetry with custom configuration for debugging slew gates and VC control
@@ -308,11 +420,31 @@ impl App {
             }
         }
 
-        // Stop playback if we've reached the end
+        // Handle end of track - either stop or advance to next in playlist
         if should_stop {
-            self.is_playing = false;
-            if let Some(engine) = &self.audio_engine {
-                engine.pause();
+            // Don't auto-advance if loop mode is active (user wants to keep looping current track)
+            if self.is_looping {
+                // Loop mode is active - don't advance, just let loop logic handle it
+                return;
+            }
+
+            // Check if we have a playlist with more tracks
+            if self.has_next_track() {
+                // Auto-advance to next track in playlist
+                if let Err(e) = self.load_next_track() {
+                    log::error!("Failed to load next track: {e}");
+                    self.is_playing = false;
+                    if let Some(engine) = &self.audio_engine {
+                        engine.pause();
+                    }
+                }
+                // Note: load_next_track() calls load_file() which starts playback automatically
+            } else {
+                // No more tracks, stop playback
+                self.is_playing = false;
+                if let Some(engine) = &self.audio_engine {
+                    engine.pause();
+                }
             }
         }
 
@@ -1085,6 +1217,148 @@ pub fn run_with_files(
     Ok(())
 }
 
+pub fn run_with_playlist(file_paths: &[String]) -> Result<(), Box<dyn Error>> {
+    // Initialize logging
+    init_logging()?;
+    info!(
+        "Starting ZIM Audio Player in playlist mode with {} tracks",
+        file_paths.len()
+    );
+
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Create app and set up playlist
+    let mut app = App::new();
+
+    // Scan current directory for audio files (for browser functionality)
+    info!("Scanning directory for audio files...");
+    if let Err(e) = app.browser.scan_directory(std::path::Path::new(".")) {
+        log::error!("Could not scan directory: {e}");
+    }
+
+    // Set up playlist
+    app.playlist = Some(file_paths.to_vec());
+    app.playlist_index = 0;
+
+    // Load first track
+    if !file_paths.is_empty()
+        && let Err(e) = app.load_file(&file_paths[0])
+    {
+        // Clean up terminal before showing error
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
+        return Err(e);
+    }
+
+    loop {
+        let res = run_app(&mut terminal, &mut app);
+
+        match res {
+            Err(e) if e.to_string() == "EDITOR_REQUESTED" => {
+                // Check if we can open the editor and get the sidecar path
+                match app.open_sidecar_in_editor() {
+                    Ok(Some(sidecar_path)) => {
+                        // Store terminal state
+                        let terminal_state_result = (|| -> Result<(), Box<dyn Error>> {
+                            // Temporarily restore terminal for editor
+                            disable_raw_mode()?;
+                            execute!(
+                                terminal.backend_mut(),
+                                LeaveAlternateScreen,
+                                DisableMouseCapture
+                            )?;
+                            terminal.show_cursor()?;
+                            Ok(())
+                        })();
+
+                        // Only proceed if terminal state was successfully changed
+                        if let Err(term_err) = terminal_state_result {
+                            log::error!("Failed to prepare terminal for editor: {term_err}");
+                            app.editor_message = Some(format!("Terminal error: {term_err}"));
+                            app.editor_message_timer = Some(std::time::Instant::now());
+                        } else {
+                            // Launch editor
+                            if let Err(editor_err) = app.launch_editor(sidecar_path) {
+                                log::error!("Editor launch failed: {editor_err}");
+                            }
+
+                            // Always attempt to restore terminal state, even if editor failed
+                            let restore_result = (|| -> Result<(), Box<dyn Error>> {
+                                enable_raw_mode()?;
+                                execute!(
+                                    terminal.backend_mut(),
+                                    EnterAlternateScreen,
+                                    EnableMouseCapture
+                                )?;
+                                terminal.hide_cursor()?;
+                                terminal.clear()?;
+                                Ok(())
+                            })();
+
+                            if let Err(restore_err) = restore_result {
+                                // Terminal restoration failed - this is critical
+                                log::error!("Failed to restore terminal: {restore_err}");
+                                return Err(
+                                    format!("Terminal restoration failed: {restore_err}").into()
+                                );
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        // Editor cannot be opened (message already set in open_sidecar_in_editor)
+                    }
+                    Err(err) => {
+                        log::error!("Error checking sidecar: {err}");
+                        app.editor_message = Some(format!("Error: {err}"));
+                        app.editor_message_timer = Some(std::time::Instant::now());
+                    }
+                }
+
+                // Continue the main loop
+                continue;
+            }
+            Err(e) => {
+                // Restore terminal before showing error
+                disable_raw_mode()?;
+                execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                )?;
+                terminal.show_cursor()?;
+
+                eprintln!("Error: {e}");
+                return Err(e);
+            }
+            Ok(_) => {
+                // Normal exit
+                break;
+            }
+        }
+    }
+
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    Ok(())
+}
+
 fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
@@ -1423,6 +1697,22 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
             } else {
                 app.enable_debug_telemetry();
                 info!("Audio telemetry enabled - press 't' again to disable");
+            }
+        }
+        KeyCode::Char('n') => {
+            // Next track in playlist
+            if app.has_next_track()
+                && let Err(e) = app.load_next_track()
+            {
+                log::error!("Failed to load next track: {e}");
+            }
+        }
+        KeyCode::Char('p') => {
+            // Previous track in playlist
+            if app.has_previous_track()
+                && let Err(e) = app.load_previous_track()
+            {
+                log::error!("Failed to load previous track: {e}");
             }
         }
         _ => {}

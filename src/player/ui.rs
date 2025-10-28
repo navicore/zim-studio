@@ -52,6 +52,14 @@ fn create_control_button(key: &str, style: Style) -> Span<'static> {
     Span::styled(format!("[{key}]"), style)
 }
 
+/// Helper to create a control button with label
+fn create_control(key: &str, label: &str, style: Style) -> Vec<Span<'static>> {
+    vec![
+        create_control_button(key, style),
+        Span::raw(format!(" {label}  ")),
+    ]
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     let size = f.area();
 
@@ -157,30 +165,62 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         Style::default().fg(Color::Magenta)
     };
 
-    let controls_row2 = vec![
-        create_control_button("i", Style::default().fg(Color::Green)),
-        Span::raw(" in  "),
-        create_control_button("o", Style::default().fg(Color::Green)),
-        Span::raw(" out  "),
-        create_control_button("x", Style::default().fg(Color::Yellow)),
-        Span::raw(" clear  "),
-        create_control_button("l", loop_style),
-        Span::raw(if app.is_looping {
-            " loop ●  "
-        } else {
-            " loop  "
-        }),
-        create_control_button("s", Style::default().fg(Color::Cyan)),
-        Span::raw(" save  "),
-        create_control_button("e", Style::default().fg(Color::Magenta)),
-        Span::raw(" edit  "),
-        create_control_button("t", Style::default().fg(Color::Yellow)),
-        Span::raw(if app.telemetry.config().enabled {
-            " telemetry ●"
-        } else {
-            " telemetry"
-        }),
-    ];
+    let mut controls_row2 = Vec::new();
+    controls_row2.extend(create_control("i", "in", Style::default().fg(Color::Green)));
+    controls_row2.extend(create_control(
+        "o",
+        "out",
+        Style::default().fg(Color::Green),
+    ));
+    controls_row2.extend(create_control(
+        "x",
+        "clear",
+        Style::default().fg(Color::Yellow),
+    ));
+
+    // Loop control has dynamic label
+    controls_row2.push(create_control_button("l", loop_style));
+    controls_row2.push(Span::raw(if app.is_looping {
+        " loop ●  "
+    } else {
+        " loop  "
+    }));
+
+    controls_row2.extend(create_control(
+        "s",
+        "save",
+        Style::default().fg(Color::Cyan),
+    ));
+    controls_row2.extend(create_control(
+        "e",
+        "edit",
+        Style::default().fg(Color::Magenta),
+    ));
+
+    // Add playlist controls if playlist is active
+    if app.playlist.is_some() {
+        controls_row2.extend(create_control(
+            "p",
+            "prev",
+            Style::default().fg(Color::Blue),
+        ));
+        controls_row2.extend(create_control(
+            "n",
+            "next",
+            Style::default().fg(Color::Blue),
+        ));
+    }
+
+    // Telemetry control has dynamic label
+    controls_row2.push(create_control_button(
+        "t",
+        Style::default().fg(Color::Yellow),
+    ));
+    controls_row2.push(Span::raw(if app.telemetry.config().enabled {
+        " telemetry ●"
+    } else {
+        " telemetry"
+    }));
 
     let controls_widget1 = Paragraph::new(Line::from(controls_row1)).alignment(Alignment::Center);
     let controls_widget2 = Paragraph::new(Line::from(controls_row2)).alignment(Alignment::Center);
@@ -216,13 +256,19 @@ fn draw_file_info_with_leds(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    // File info
+    // File info with optional playlist position
     let file_info = if let Some(file) = &app.current_file {
         let filename = std::path::Path::new(file)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(file);
-        format!("Loaded: {filename}")
+
+        // Add playlist position if available
+        if let Some(position) = app.get_playlist_position() {
+            format!("Loaded: {filename} ({position})")
+        } else {
+            format!("Loaded: {filename}")
+        }
     } else {
         "No file selected - Pass a file path to play".to_string()
     };
