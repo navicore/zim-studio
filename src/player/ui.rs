@@ -107,8 +107,24 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         .constraints(constraints)
         .split(size);
 
-    // Title (more compact)
-    let title = Paragraph::new("🎵 ZIM Player")
+    // Title - show current file or "ZIM Player" if no file
+    let title_text = if let Some(file) = &app.current_file {
+        let filename = std::path::Path::new(file)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(file);
+
+        // Add playlist position if available
+        if let Some(position) = app.get_playlist_position() {
+            format!("🎵 {filename} ({position})")
+        } else {
+            format!("🎵 {filename}")
+        }
+    } else {
+        "🎵 ZIM Player".to_string()
+    };
+
+    let title = Paragraph::new(title_text)
         .style(
             Style::default()
                 .fg(Color::Cyan)
@@ -256,19 +272,9 @@ fn draw_file_info_with_leds(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    // File info with optional playlist position
-    let file_info = if let Some(file) = &app.current_file {
-        let filename = std::path::Path::new(file)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(file);
-
-        // Add playlist position if available
-        if let Some(position) = app.get_playlist_position() {
-            format!("Loaded: {filename} ({position})")
-        } else {
-            format!("Loaded: {filename}")
-        }
+    // File info - simplified since title now shows filename and position
+    let file_info = if app.current_file.is_some() {
+        "Ready".to_string()
     } else {
         "No file selected - Pass a file path to play".to_string()
     };
