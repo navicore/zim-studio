@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod metadata;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ArtPurpose {
@@ -10,6 +11,7 @@ pub enum ArtPurpose {
     Other,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArtEntry {
     pub path: String,
@@ -17,6 +19,7 @@ pub struct ArtEntry {
     pub purpose: ArtPurpose,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaMetadata {
     pub file: String,
