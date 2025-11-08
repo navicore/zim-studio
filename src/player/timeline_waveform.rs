@@ -50,6 +50,10 @@ impl TimelineWaveform {
         let samples: Vec<f32> = match spec.sample_format {
             hound::SampleFormat::Int => {
                 let bits = spec.bits_per_sample;
+                // Validate bit depth to prevent integer overflow in shift operation
+                if !(1..=31).contains(&bits) {
+                    return Err(format!("Unsupported bit depth: {bits} bits").into());
+                }
                 let max_value = (1i32 << (bits - 1)) as f32;
                 reader
                     .samples::<i32>()
@@ -113,6 +117,10 @@ impl TimelineWaveform {
         let samples: Vec<f32> = match spec.sample_format {
             hound::SampleFormat::Int => {
                 let bits = spec.bits_per_sample;
+                // Validate bit depth to prevent integer overflow in shift operation
+                if !(1..=31).contains(&bits) {
+                    return Err(format!("Unsupported bit depth: {bits} bits").into());
+                }
                 let max_value = (1i32 << (bits - 1)) as f32;
                 reader
                     .samples::<i32>()

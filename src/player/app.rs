@@ -38,7 +38,7 @@ pub struct App {
     pub waveform_buffer: WaveformBuffer,
     pub timeline_waveform: Option<TimelineWaveform>, // Full-timeline waveform for long file navigation
     waveform_progress_rx: Option<mpsc::Receiver<WaveformProgress>>, // Progress updates for async waveform calculation
-    waveform_result_rx: Option<mpsc::Receiver<TimelineWaveform>>, // Completed waveform from background thread
+    waveform_result_rx: Option<mpsc::Receiver<Result<TimelineWaveform, String>>>, // Completed waveform from background thread
     pub waveform_progress: Option<WaveformProgress>, // Current waveform calculation progress
     samples_rx: Option<mpsc::Receiver<Vec<f32>>>,
     pub left_level: f32,
@@ -127,7 +127,13 @@ impl App {
 
             // Calculate timeline waveform for WAV files (async, non-blocking)
             let path_obj = std::path::Path::new(path);
-            if path_obj.extension().and_then(|s| s.to_str()) == Some("wav") {
+            let is_wav = path_obj
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.eq_ignore_ascii_case("wav"))
+                .unwrap_or(false);
+
+            if is_wav {
                 should_spawn_waveform = true;
             } else {
                 // Non-WAV files don't get timeline waveforms
@@ -164,15 +170,11 @@ impl App {
         // Spawn calculation thread
         std::thread::spawn(move || {
             let path_obj = std::path::Path::new(&path);
-            match TimelineWaveform::from_wav_file_with_progress(path_obj, 1500, Some(progress_tx)) {
-                Ok(waveform) => {
-                    // Send completed waveform back to main thread
-                    let _ = result_tx.send(waveform);
-                }
-                Err(e) => {
-                    eprintln!("Warning: Could not calculate timeline waveform: {e}");
-                }
-            }
+            let result =
+                TimelineWaveform::from_wav_file_with_progress(path_obj, 1500, Some(progress_tx));
+
+            // Send result (success or error) back to main thread
+            let _ = result_tx.send(result.map_err(|e| e.to_string()));
         });
     }
 
@@ -185,13 +187,22 @@ impl App {
             }
         }
 
-        // Check for completed waveform
+        // Check for completed waveform (success or failure)
         if let Some(ref rx) = self.waveform_result_rx
-            && let Ok(waveform) = rx.try_recv()
+            && let Ok(result) = rx.try_recv()
         {
-            self.timeline_waveform = Some(waveform);
-            self.waveform_progress = None; // Clear progress indicator
-            self.waveform_progress_rx = None; // Clean up channels
+            match result {
+                Ok(waveform) => {
+                    self.timeline_waveform = Some(waveform);
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not calculate timeline waveform: {e}");
+                    // Could optionally show error in UI here
+                }
+            }
+            // Always clear progress indicator and cleanup channels
+            self.waveform_progress = None;
+            self.waveform_progress_rx = None;
             self.waveform_result_rx = None;
         }
     }
