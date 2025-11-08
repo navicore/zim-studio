@@ -18,6 +18,7 @@ use super::audio::AudioEngine;
 use super::browser::Browser;
 use super::save_dialog::SaveDialog;
 use super::telemetry::{AudioTelemetry, TelemetryConfig};
+use super::timeline_waveform::TimelineWaveform;
 use super::ui;
 use super::waveform::WaveformBuffer;
 use std::sync::mpsc;
@@ -35,6 +36,7 @@ pub struct App {
     pub is_playing: bool,
     pub audio_engine: Option<AudioEngine>,
     pub waveform_buffer: WaveformBuffer,
+    pub timeline_waveform: Option<TimelineWaveform>, // Full-timeline waveform for long file navigation
     samples_rx: Option<mpsc::Receiver<Vec<f32>>>,
     pub left_level: f32,
     pub right_level: f32,
@@ -66,6 +68,7 @@ impl App {
             is_playing: false,
             audio_engine: None,
             waveform_buffer: WaveformBuffer::new(4096),
+            timeline_waveform: None,
             samples_rx: None,
             left_level: 0.0,
             right_level: 0.0,
@@ -109,6 +112,26 @@ impl App {
             self.duration = engine.duration;
 
             self.current_file = Some(path.to_string());
+
+            // Calculate full-timeline waveform for WAV files
+            // (For MVP: blocking calculation, will be async in Phase 2)
+            let path_obj = std::path::Path::new(path);
+            if path_obj.extension().and_then(|s| s.to_str()) == Some("wav") {
+                // Target ~1500 peaks for good visualization resolution
+                match TimelineWaveform::from_wav_file(path_obj, 1500) {
+                    Ok(waveform) => {
+                        self.timeline_waveform = Some(waveform);
+                    }
+                    Err(e) => {
+                        // Don't fail the load if waveform calculation fails
+                        eprintln!("Warning: Could not calculate timeline waveform: {e}");
+                        self.timeline_waveform = None;
+                    }
+                }
+            } else {
+                // Non-WAV files don't get timeline waveforms (yet)
+                self.timeline_waveform = None;
+            }
 
             // Start playback automatically when file is loaded
             self.is_playing = true;

@@ -395,11 +395,29 @@ fn draw_grid(ctx: &mut Context, area: Rect) {
 }
 
 fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
-    // Get peak pairs from the waveform buffer for better visualization
-    let peaks = app.waveform_buffer.get_display_peaks(area.width as usize);
+    // Use full-timeline waveform when paused/stopped, live oscilloscope when playing
+    let use_timeline = !app.is_playing && app.timeline_waveform.is_some();
+
+    let peaks = if use_timeline {
+        // Get peaks from the full-timeline waveform
+        app.timeline_waveform
+            .as_ref()
+            .unwrap()
+            .get_display_peaks(area.width as usize)
+    } else {
+        // Get peak pairs from the live waveform buffer
+        app.waveform_buffer.get_display_peaks(area.width as usize)
+    };
 
     if peaks.iter().any(|(min, max)| *min != 0.0 || *max != 0.0) {
-        // Draw real audio data using peak-to-peak visualization
+        // Choose color based on mode
+        let waveform_color = if use_timeline {
+            Color::Rgb(100, 150, 255) // Blue for timeline view
+        } else {
+            Color::Rgb(0, 255, 100) // Bright green for live oscilloscope
+        };
+
+        // Draw audio data using peak-to-peak visualization
         for (i, (min, max)) in peaks.iter().enumerate() {
             let x = i as f64;
             // Amplify for better visibility
@@ -414,7 +432,7 @@ fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
                     y1: min_amp,
                     x2: x,
                     y2: max_amp,
-                    color: Color::Rgb(0, 255, 100), // Bright green
+                    color: waveform_color,
                 });
             } else if max_amp.abs() > 0.01 {
                 // Draw a point for very quiet signals
@@ -423,7 +441,7 @@ fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
                     y1: max_amp - 0.01,
                     x2: x,
                     y2: max_amp + 0.01,
-                    color: Color::Rgb(0, 255, 100),
+                    color: waveform_color,
                 });
             }
 
@@ -437,10 +455,27 @@ fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
                         y1: 0.0,
                         x2: x,
                         y2: 0.0,
-                        color: Color::Rgb(0, 150, 50), // Slightly darker green for zero crossings
+                        color: if use_timeline {
+                            Color::Rgb(60, 100, 180) // Darker blue for timeline zero crossings
+                        } else {
+                            Color::Rgb(0, 150, 50) // Slightly darker green for live zero crossings
+                        },
                     });
                 }
             }
+        }
+
+        // Draw playback position marker for timeline view
+        if use_timeline {
+            let position_x = (app.playback_position * area.width as f32) as f64;
+            // Draw vertical line showing current position
+            ctx.draw(&ratatui::widgets::canvas::Line {
+                x1: position_x,
+                y1: -1.0,
+                x2: position_x,
+                y2: 1.0,
+                color: Color::Rgb(255, 200, 0), // Yellow/amber marker
+            });
         }
     } else {
         // Demo sine wave when no audio loaded
