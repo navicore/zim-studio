@@ -161,11 +161,7 @@ impl App {
 
         self.waveform_progress_rx = Some(progress_rx);
         self.waveform_result_rx = Some(result_rx);
-        self.waveform_progress = Some(WaveformProgress {
-            current: 0,
-            total: 100,
-            percentage: 0.0,
-        });
+        self.waveform_progress = Some(WaveformProgress { percentage: 0.0 });
 
         // Spawn calculation thread
         std::thread::spawn(move || {
@@ -351,12 +347,6 @@ impl App {
             .map(|pl| format!("{}/{}", self.playlist_index + 1, pl.len()))
     }
 
-    /// Enable telemetry with custom configuration for debugging slew gates and VC control
-    #[allow(dead_code)]
-    pub fn enable_telemetry(&mut self, config: TelemetryConfig) {
-        self.telemetry.update_config(config);
-    }
-
     /// Enable telemetry with default debugging configuration
     pub fn enable_debug_telemetry(&mut self) {
         let config = TelemetryConfig {
@@ -377,17 +367,6 @@ impl App {
         config.enabled = false;
         self.telemetry.update_config(config);
     }
-
-    /// Export telemetry data
-    #[allow(dead_code)]
-    pub fn export_telemetry(&self, format: &str) -> Result<String, Box<dyn Error>> {
-        match format {
-            "json" => Ok(self.telemetry.export_json()?),
-            "csv" => Ok(self.telemetry.export_csv()),
-            _ => Err("Unsupported export format. Use 'json' or 'csv'".into()),
-        }
-    }
-
     pub fn toggle_playback(&mut self) {
         if let Some(engine) = &mut self.audio_engine {
             if self.is_playing {

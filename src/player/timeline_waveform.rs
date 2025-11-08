@@ -11,10 +11,7 @@ use std::sync::mpsc::Sender;
 
 /// Progress update for waveform calculation
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct WaveformProgress {
-    pub current: usize,
-    pub total: usize,
     pub percentage: f32,
 }
 
@@ -23,82 +20,9 @@ pub struct WaveformProgress {
 pub struct TimelineWaveform {
     /// Peak min/max pairs for each downsampled segment
     peaks: Vec<(f32, f32)>,
-    /// Duration of the audio file in seconds
-    duration: f32,
-    /// Number of samples per peak pair (for reference)
-    #[allow(dead_code)]
-    samples_per_peak: usize,
 }
 
 impl TimelineWaveform {
-    /// Calculate waveform from a WAV file
-    ///
-    /// # Arguments
-    /// * `path` - Path to the WAV file
-    /// * `target_peaks` - Number of peak pairs to generate (typically 1000-2000 for display)
-    ///
-    /// # Returns
-    /// A TimelineWaveform containing the downsampled peak data
-    #[allow(dead_code)]
-    pub fn from_wav_file(path: &Path, target_peaks: usize) -> Result<Self, Box<dyn Error>> {
-        let mut reader = WavReader::open(path)?;
-        let spec = reader.spec();
-        let sample_rate = spec.sample_rate as f32;
-        let channels = spec.channels as usize;
-
-        // Read all samples and convert to mono f32
-        let samples: Vec<f32> = match spec.sample_format {
-            hound::SampleFormat::Int => {
-                let bits = spec.bits_per_sample;
-                // Validate bit depth to prevent integer overflow in shift operation
-                if !(1..=31).contains(&bits) {
-                    return Err(format!("Unsupported bit depth: {bits} bits").into());
-                }
-                let max_value = (1i32 << (bits - 1)) as f32;
-                reader
-                    .samples::<i32>()
-                    .filter_map(|s| s.ok())
-                    .map(|s| s as f32 / max_value)
-                    .collect()
-            }
-            hound::SampleFormat::Float => reader.samples::<f32>().filter_map(|s| s.ok()).collect(),
-        };
-
-        // Convert to mono if stereo
-        let mono_samples: Vec<f32> = if channels == 2 {
-            samples
-                .chunks_exact(2)
-                .map(|chunk| (chunk[0] + chunk[1]) / 2.0)
-                .collect()
-        } else {
-            samples
-        };
-
-        let total_samples = mono_samples.len();
-        let duration = total_samples as f32 / sample_rate;
-        let samples_per_peak = total_samples.div_ceil(target_peaks); // Round up
-
-        // Calculate peaks
-        let peaks: Vec<(f32, f32)> = mono_samples
-            .chunks(samples_per_peak)
-            .map(|chunk| {
-                if chunk.is_empty() {
-                    (0.0, 0.0)
-                } else {
-                    let min = chunk.iter().copied().fold(f32::INFINITY, f32::min);
-                    let max = chunk.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                    (min, max)
-                }
-            })
-            .collect();
-
-        Ok(Self {
-            peaks,
-            duration,
-            samples_per_peak,
-        })
-    }
-
     /// Calculate waveform from a WAV file with progress reporting
     ///
     /// This version sends progress updates through the provided channel,
@@ -110,7 +34,6 @@ impl TimelineWaveform {
     ) -> Result<Self, Box<dyn Error>> {
         let mut reader = WavReader::open(path)?;
         let spec = reader.spec();
-        let sample_rate = spec.sample_rate as f32;
         let channels = spec.channels as usize;
 
         // Read all samples and convert to mono f32
@@ -142,7 +65,6 @@ impl TimelineWaveform {
         };
 
         let total_samples = mono_samples.len();
-        let duration = total_samples as f32 / sample_rate;
         let samples_per_peak = total_samples.div_ceil(target_peaks);
 
         // Calculate peaks with progress reporting
@@ -156,8 +78,6 @@ impl TimelineWaveform {
                     && idx % 100 == 0
                 {
                     let _ = tx.send(WaveformProgress {
-                        current: idx,
-                        total: total_chunks,
                         percentage: (idx as f32 / total_chunks as f32) * 100.0,
                     });
                 }
@@ -174,24 +94,10 @@ impl TimelineWaveform {
 
         // Send final progress update
         if let Some(ref tx) = progress_tx {
-            let _ = tx.send(WaveformProgress {
-                current: total_chunks,
-                total: total_chunks,
-                percentage: 100.0,
-            });
+            let _ = tx.send(WaveformProgress { percentage: 100.0 });
         }
 
-        Ok(Self {
-            peaks,
-            duration,
-            samples_per_peak,
-        })
-    }
-
-    /// Get the peak data for display
-    #[allow(dead_code)]
-    pub fn get_peaks(&self) -> &[(f32, f32)] {
-        &self.peaks
+        Ok(Self { peaks })
     }
 
     /// Get a subset of peaks for the given display width
@@ -236,27 +142,6 @@ impl TimelineWaveform {
             })
             .collect()
     }
-
-    /// Get the duration of the audio in seconds
-    #[allow(dead_code)]
-    pub fn duration(&self) -> f32 {
-        self.duration
-    }
-
-    /// Convert a time position (in seconds) to a peak index
-    #[allow(dead_code)]
-    pub fn time_to_peak_index(&self, time_seconds: f32) -> usize {
-        let ratio = time_seconds / self.duration;
-        let index = (ratio * self.peaks.len() as f32) as usize;
-        index.min(self.peaks.len().saturating_sub(1))
-    }
-
-    /// Convert a peak index to a time position (in seconds)
-    #[allow(dead_code)]
-    pub fn peak_index_to_time(&self, index: usize) -> f32 {
-        let ratio = index as f32 / self.peaks.len() as f32;
-        ratio * self.duration
-    }
 }
 
 #[cfg(test)]
@@ -268,8 +153,6 @@ mod tests {
         let peaks = vec![(0.0, 1.0), (0.1, 0.9), (0.2, 0.8)];
         let waveform = TimelineWaveform {
             peaks: peaks.clone(),
-            duration: 3.0,
-            samples_per_peak: 1000,
         };
 
         let display_peaks = waveform.get_display_peaks(3);
@@ -280,11 +163,7 @@ mod tests {
     #[test]
     fn test_get_display_peaks_downsampled() {
         let peaks = vec![(-1.0, 1.0), (-0.8, 0.8), (-0.6, 0.6), (-0.4, 0.4)];
-        let waveform = TimelineWaveform {
-            peaks,
-            duration: 4.0,
-            samples_per_peak: 1000,
-        };
+        let waveform = TimelineWaveform { peaks };
 
         let display_peaks = waveform.get_display_peaks(2);
         assert_eq!(display_peaks.len(), 2);
@@ -292,31 +171,5 @@ mod tests {
         assert_eq!(display_peaks[0], (-1.0, 1.0));
         // Second pixel should cover last two peaks: min=-0.6, max=0.6
         assert_eq!(display_peaks[1], (-0.6, 0.6));
-    }
-
-    #[test]
-    fn test_time_to_peak_index() {
-        let waveform = TimelineWaveform {
-            peaks: vec![(0.0, 0.0); 100],
-            duration: 10.0,
-            samples_per_peak: 1000,
-        };
-
-        assert_eq!(waveform.time_to_peak_index(0.0), 0);
-        assert_eq!(waveform.time_to_peak_index(5.0), 50); // Middle
-        assert_eq!(waveform.time_to_peak_index(10.0), 99); // End
-    }
-
-    #[test]
-    fn test_peak_index_to_time() {
-        let waveform = TimelineWaveform {
-            peaks: vec![(0.0, 0.0); 100],
-            duration: 10.0,
-            samples_per_peak: 1000,
-        };
-
-        assert_eq!(waveform.peak_index_to_time(0), 0.0);
-        assert!((waveform.peak_index_to_time(50) - 5.0).abs() < 0.01); // Middle
-        assert!((waveform.peak_index_to_time(99) - 9.9).abs() < 0.01); // Near end
     }
 }

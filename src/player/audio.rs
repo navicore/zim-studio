@@ -736,16 +736,6 @@ pub struct AiffSource {
 }
 
 impl AiffSource {
-    #[allow(dead_code)]
-    fn new(
-        path: &Path,
-        samples_tx: mpsc::Sender<Vec<f32>>,
-        samples_played: Arc<AtomicUsize>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let aiff_data = crate::media::metadata::read_aiff_data(path)?;
-        Self::from_data(aiff_data, samples_tx, samples_played)
-    }
-
     pub fn from_data(
         aiff_data: crate::media::metadata::AiffData,
         samples_tx: mpsc::Sender<Vec<f32>>,

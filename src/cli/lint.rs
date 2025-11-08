@@ -37,41 +37,46 @@ enum ArtPurpose {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ArtReference {
-    path: String,
-    #[serde(default)]
-    description: String,
-    purpose: ArtPurpose,
+    #[serde(rename = "path")]
+    _path: String,
+    #[serde(default, rename = "description")]
+    _description: String,
+    #[serde(rename = "purpose")]
+    _purpose: ArtPurpose,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct SidecarMetadata {
-    file: String,
-    path: String,
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    description: String,
+    #[serde(rename = "file")]
+    _file: String,
+    #[serde(rename = "path")]
+    _path: String,
+    #[serde(default, rename = "title")]
+    _title: String,
+    #[serde(default, rename = "description")]
+    _description: String,
 
     // Audio-specific fields (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     duration: Option<DurationField>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sample_rate: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    channels: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bit_depth: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "sample_rate")]
+    _sample_rate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "channels")]
+    _channels: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "bit_depth")]
+    _bit_depth: Option<u16>,
 
     // File system metadata
-    file_size: u64,
-    modified: String,
+    #[serde(rename = "file_size")]
+    _file_size: u64,
+    #[serde(rename = "modified")]
+    _modified: String,
 
     // User-editable fields
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default)]
-    art: Vec<ArtReference>,
+    #[serde(default, rename = "tags")]
+    _tags: Vec<String>,
+    #[serde(default, rename = "art")]
+    _art: Vec<ArtReference>,
 }
 
 pub fn handle_lint(project_path: &str) -> Result<(), Box<dyn Error>> {
