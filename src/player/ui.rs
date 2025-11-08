@@ -202,6 +202,21 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         " loop  "
     }));
 
+    // Waveform view toggle (only when playing and timeline waveform available)
+    if app.is_playing && app.timeline_waveform.is_some() {
+        let waveform_style = if app.show_timeline_while_playing {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        controls_row2.push(create_control_button("w", waveform_style));
+        controls_row2.push(Span::raw(if app.show_timeline_while_playing {
+            " timeline ●  "
+        } else {
+            " timeline  "
+        }));
+    }
+
     controls_row2.extend(create_control(
         "s",
         "save",
@@ -408,8 +423,9 @@ fn draw_grid(ctx: &mut Context, area: Rect) {
 }
 
 fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
-    // Use full-timeline waveform when paused/stopped, live oscilloscope when playing
-    let use_timeline = !app.is_playing && app.timeline_waveform.is_some();
+    // Use timeline waveform when: paused OR (playing AND user toggled timeline view)
+    let use_timeline =
+        (!app.is_playing || app.show_timeline_while_playing) && app.timeline_waveform.is_some();
 
     let peaks = if use_timeline {
         // Get peaks from the full-timeline waveform

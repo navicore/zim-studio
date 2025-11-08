@@ -51,7 +51,8 @@ pub struct App {
     pub mark_out: Option<f32>, // 0.0 to 1.0
     edit_counter: u32,         // Track number of edits this session
     pub save_dialog: Option<SaveDialog>,
-    pub is_looping: bool, // Whether we're looping the selection
+    pub is_looping: bool,                  // Whether we're looping the selection
+    pub show_timeline_while_playing: bool, // Toggle timeline view during playback (default: oscilloscope)
     pub view_mode: ViewMode,
     pub telemetry: AudioTelemetry,
     previous_left_level: f32,           // For slew gate rate calculation
@@ -87,6 +88,7 @@ impl App {
             edit_counter: 0,
             save_dialog: None,
             is_looping: false,
+            show_timeline_while_playing: false,
             view_mode: ViewMode::Player,
             telemetry: AudioTelemetry::new(),
             previous_left_level: 0.0,
@@ -1777,6 +1779,10 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
                 app.enable_debug_telemetry();
                 info!("Audio telemetry enabled - press 't' again to disable");
             }
+        }
+        KeyCode::Char('w') => {
+            // Toggle timeline waveform view while playing
+            app.show_timeline_while_playing = !app.show_timeline_while_playing;
         }
         KeyCode::Char('n') => {
             // Next track in playlist
