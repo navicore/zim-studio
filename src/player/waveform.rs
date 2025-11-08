@@ -99,5 +99,4 @@ mod tests {
         let samples: Vec<f32> = buffer.samples.iter().copied().collect();
         assert_eq!(samples, vec![2.0, 3.0, 4.0, 5.0, 6.0]);
     }
-
 }
