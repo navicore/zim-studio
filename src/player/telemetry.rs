@@ -376,60 +376,9 @@ impl AudioTelemetry {
         }
     }
 
-    /// Get recent telemetry snapshots for analysis
-    #[allow(dead_code)]
-    pub fn get_recent_snapshots(&self, count: usize) -> Vec<&TelemetrySnapshot> {
-        self.snapshots.iter().rev().take(count).collect()
-    }
-
-    /// Get all stored snapshots
-    #[allow(dead_code)]
-    pub fn get_all_snapshots(&self) -> &VecDeque<TelemetrySnapshot> {
-        &self.snapshots
-    }
-
-    /// Clear all stored snapshots
-    #[allow(dead_code)]
-    pub fn clear(&mut self) {
-        self.snapshots.clear();
-    }
-
     /// Get current configuration
     pub fn config(&self) -> &TelemetryConfig {
         &self.config
-    }
-
-    /// Export snapshots to JSON string
-    #[allow(dead_code)]
-    pub fn export_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(&self.snapshots)
-    }
-
-    /// Export snapshots to CSV format
-    #[allow(dead_code)]
-    pub fn export_csv(&self) -> String {
-        let mut csv = String::from(
-            "timestamp,state,left_in,left_out,left_delta,right_in,right_out,right_delta,samples,rms,position\n",
-        );
-
-        for snapshot in &self.snapshots {
-            csv.push_str(&format!(
-                "{:.3},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{:.3},{:.3}\n",
-                snapshot.timestamp_secs,
-                snapshot.playback_state,
-                snapshot.left_channel.input_level,
-                snapshot.left_channel.output_level,
-                snapshot.left_channel.rate_of_change,
-                snapshot.right_channel.input_level,
-                snapshot.right_channel.output_level,
-                snapshot.right_channel.rate_of_change,
-                snapshot.format_info.sample_count,
-                snapshot.format_info.raw_rms,
-                snapshot.playback_position
-            ));
-        }
-
-        csv
     }
 }
 
@@ -529,26 +478,5 @@ mod tests {
         // Should contain the last 2 snapshots (indices 1 and 2)
         assert_eq!(telemetry.snapshots[0].left_channel.output_level, 0.1);
         assert_eq!(telemetry.snapshots[1].left_channel.output_level, 0.2);
-    }
-
-    #[test]
-    fn test_export_formats() {
-        let mut config = TelemetryConfig::default();
-        config.enabled = true;
-        config.capture_interval_ms = 0;
-
-        let mut telemetry = AudioTelemetry::with_config(config);
-
-        telemetry.force_capture(0.5, 0.6, 0.4, 0.5, "playing", 0.5, None, None);
-
-        // Test JSON export
-        let json = telemetry.export_json().unwrap();
-        assert!(json.contains("playback_state"));
-        assert!(json.contains("playing"));
-
-        // Test CSV export
-        let csv = telemetry.export_csv();
-        assert!(csv.contains("timestamp,state,left_in"));
-        assert!(csv.contains("playing"));
     }
 }

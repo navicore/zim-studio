@@ -71,7 +71,6 @@ pub struct AudioMetadata {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct AiffData {
     pub sample_rate: u32,
     pub channels: u16,
@@ -212,97 +211,6 @@ fn read_wav_metadata(path: &Path) -> Result<AudioMetadata, Box<dyn std::error::E
     }
 }
 
-#[allow(dead_code)]
-fn read_aiff_metadata(path: &Path) -> Result<AudioMetadata, Box<dyn std::error::Error>> {
-    let mut file = File::open(path)?;
-
-    // Read FORM header
-    let mut form = [0u8; 4];
-    file.read_exact(&mut form)?;
-    if &form != b"FORM" {
-        return Err("Not a valid AIFF file".into());
-    }
-
-    // Skip file size (big-endian)
-    file.seek(SeekFrom::Current(4))?;
-
-    // Read AIFF identifier
-    let mut aiff = [0u8; 4];
-    file.read_exact(&mut aiff)?;
-    if &aiff != b"AIFF" {
-        return Err("Not a valid AIFF file".into());
-    }
-
-    // Find COMM chunk
-    loop {
-        let mut chunk_id = [0u8; 4];
-        if file.read_exact(&mut chunk_id).is_err() {
-            break;
-        }
-
-        let mut chunk_size = [0u8; 4];
-        file.read_exact(&mut chunk_size)?;
-        let size = u32::from_be_bytes(chunk_size); // Big-endian for AIFF
-
-        if &chunk_id == b"COMM" {
-            // Read COMM chunk (Common chunk)
-            let mut comm_data = vec![0u8; size.min(18) as usize];
-            file.read_exact(&mut comm_data)?;
-
-            let channels = u16::from_be_bytes([comm_data[0], comm_data[1]]);
-            let num_sample_frames =
-                u32::from_be_bytes([comm_data[2], comm_data[3], comm_data[4], comm_data[5]]);
-            let bits_per_sample = u16::from_be_bytes([comm_data[6], comm_data[7]]);
-
-            // AIFF stores sample rate as 80-bit IEEE 754 extended precision
-            // Implement proper conversion from 80-bit IEEE 754 extended to f64
-            let sample_rate = if comm_data.len() >= 18 {
-                parse_ieee_extended_80(&comm_data[8..18])
-                    .map(|rate| {
-                        let rate_u32 = rate.round() as u32;
-                        // Fix common AIFF parsing errors based on concrete duration testing
-                        if rate_u32 == 109636 {
-                            // Common AIFF 80-bit IEEE parsing error
-                            44100
-                        } else if rate_u32 == 153736 {
-                            // Concrete test: ZIM shows 6:58, QuickTime shows 3:29 (exactly 2x)
-                            // This means our 44100 Hz correction was half what it should be
-                            88200
-                        } else if (1000..=200000).contains(&rate_u32) {
-                            rate_u32
-                        } else {
-                            // Invalid sample rate, use fallback
-                            44100
-                        }
-                    })
-                    .unwrap_or(44100) // Fallback if parsing fails
-            } else {
-                44100 // Fallback
-            };
-
-            // Calculate duration from number of sample frames
-            let duration_seconds = if sample_rate > 0 {
-                Some(num_sample_frames as f64 / sample_rate as f64)
-            } else {
-                None
-            };
-
-            return Ok(AudioMetadata {
-                sample_rate,
-                channels,
-                bits_per_sample,
-                duration_seconds,
-            });
-        } else {
-            // Skip this chunk
-            file.seek(SeekFrom::Current(size as i64))?;
-        }
-    }
-
-    Err("COMM chunk not found in AIFF file".into())
-}
-
-#[allow(dead_code)]
 pub fn read_aiff_data(path: &Path) -> Result<AiffData, Box<dyn std::error::Error>> {
     let mut file = File::open(path)?;
 
