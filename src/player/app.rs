@@ -18,7 +18,7 @@ use super::audio::AudioEngine;
 use super::browser::Browser;
 use super::save_dialog::SaveDialog;
 use super::telemetry::{AudioTelemetry, TelemetryConfig};
-use super::timeline_waveform::TimelineWaveform;
+use super::timeline_waveform::{TimelineWaveform, WaveformProgress};
 use super::ui;
 use super::waveform::WaveformBuffer;
 use std::sync::mpsc;
@@ -37,6 +37,9 @@ pub struct App {
     pub audio_engine: Option<AudioEngine>,
     pub waveform_buffer: WaveformBuffer,
     pub timeline_waveform: Option<TimelineWaveform>, // Full-timeline waveform for long file navigation
+    waveform_progress_rx: Option<mpsc::Receiver<WaveformProgress>>, // Progress updates for async waveform calculation
+    waveform_result_rx: Option<mpsc::Receiver<TimelineWaveform>>, // Completed waveform from background thread
+    pub waveform_progress: Option<WaveformProgress>, // Current waveform calculation progress
     samples_rx: Option<mpsc::Receiver<Vec<f32>>>,
     pub left_level: f32,
     pub right_level: f32,
@@ -69,6 +72,9 @@ impl App {
             audio_engine: None,
             waveform_buffer: WaveformBuffer::new(4096),
             timeline_waveform: None,
+            waveform_progress_rx: None,
+            waveform_result_rx: None,
+            waveform_progress: None,
             samples_rx: None,
             left_level: 0.0,
             right_level: 0.0,
@@ -101,6 +107,10 @@ impl App {
             self.samples_rx = Some(samples_rx);
         }
 
+        // Determine if we need to spawn waveform calculation
+        let mut should_spawn_waveform = false;
+        let path_string = path.to_string();
+
         // Load the file
         if let Some(engine) = &mut self.audio_engine {
             engine.load_file(std::path::Path::new(path))?;
@@ -113,24 +123,29 @@ impl App {
 
             self.current_file = Some(path.to_string());
 
-            // Calculate full-timeline waveform for WAV files
-            // (For MVP: blocking calculation, will be async in Phase 2)
+            // Check for timeline waveform (sync cache loading only)
             let path_obj = std::path::Path::new(path);
             if path_obj.extension().and_then(|s| s.to_str()) == Some("wav") {
-                // Target ~1500 peaks for good visualization resolution
-                match TimelineWaveform::from_wav_file(path_obj, 1500) {
-                    Ok(waveform) => {
-                        self.timeline_waveform = Some(waveform);
+                // Try to load from cache first
+                if TimelineWaveform::has_valid_cache(path_obj) {
+                    match TimelineWaveform::from_cache(path_obj) {
+                        Ok(waveform) => {
+                            self.timeline_waveform = Some(waveform);
+                            self.waveform_progress = None;
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Could not load waveform cache: {e}");
+                            should_spawn_waveform = true;
+                        }
                     }
-                    Err(e) => {
-                        // Don't fail the load if waveform calculation fails
-                        eprintln!("Warning: Could not calculate timeline waveform: {e}");
-                        self.timeline_waveform = None;
-                    }
+                } else {
+                    // No cache available
+                    should_spawn_waveform = true;
                 }
             } else {
-                // Non-WAV files don't get timeline waveforms (yet)
+                // Non-WAV files don't get timeline waveforms
                 self.timeline_waveform = None;
+                self.waveform_progress = None;
             }
 
             // Start playback automatically when file is loaded
@@ -138,7 +153,64 @@ impl App {
             engine.play();
         }
 
+        // Spawn waveform calculation if needed (outside the engine borrow)
+        if should_spawn_waveform {
+            self.spawn_waveform_calculation(path_string);
+        }
+
         Ok(())
+    }
+
+    /// Spawn background thread to calculate timeline waveform
+    fn spawn_waveform_calculation(&mut self, path: String) {
+        let (progress_tx, progress_rx) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
+
+        self.waveform_progress_rx = Some(progress_rx);
+        self.waveform_result_rx = Some(result_rx);
+        self.waveform_progress = Some(WaveformProgress {
+            current: 0,
+            total: 100,
+            percentage: 0.0,
+        });
+
+        // Spawn calculation thread
+        std::thread::spawn(move || {
+            let path_obj = std::path::Path::new(&path);
+            match TimelineWaveform::from_wav_file_with_progress(path_obj, 1500, Some(progress_tx)) {
+                Ok(waveform) => {
+                    // Try to save to cache
+                    if let Err(e) = waveform.save_to_cache(path_obj) {
+                        eprintln!("Warning: Could not save waveform cache: {e}");
+                    }
+                    // Send completed waveform back to main thread
+                    let _ = result_tx.send(waveform);
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not calculate timeline waveform: {e}");
+                }
+            }
+        });
+    }
+
+    /// Poll for waveform calculation updates (call this in the main loop)
+    pub fn poll_waveform_updates(&mut self) {
+        // Check for progress updates
+        if let Some(ref rx) = self.waveform_progress_rx {
+            while let Ok(progress) = rx.try_recv() {
+                self.waveform_progress = Some(progress);
+            }
+        }
+
+        // Check for completed waveform
+        if let Some(ref rx) = self.waveform_result_rx
+            && let Ok(waveform) = rx.try_recv()
+        {
+            self.timeline_waveform = Some(waveform);
+            self.waveform_progress = None; // Clear progress indicator
+            self.waveform_progress_rx = None; // Clean up channels
+            self.waveform_result_rx = None;
+        }
     }
 
     pub fn load_files(
@@ -1389,6 +1461,9 @@ fn run_app<B: ratatui::backend::Backend>(
     loop {
         // Update waveform data
         app.update_waveform();
+
+        // Poll for timeline waveform calculation updates
+        app.poll_waveform_updates();
 
         // Clear editor message after 3 seconds
         if let Some(timer) = app.editor_message_timer

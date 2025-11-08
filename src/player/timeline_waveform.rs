@@ -6,11 +6,22 @@
 
 use hound::WavReader;
 use std::error::Error;
-use std::path::Path;
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::Sender;
 
-/// Downsampled waveform data representing the entire audio timeline
+/// Progress update for waveform calculation
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+pub struct WaveformProgress {
+    pub current: usize,
+    pub total: usize,
+    pub percentage: f32,
+}
+
+/// Downsampled waveform data representing the entire audio timeline
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TimelineWaveform {
     /// Peak min/max pairs for each downsampled segment
     peaks: Vec<(f32, f32)>,
@@ -29,6 +40,7 @@ impl TimelineWaveform {
     ///
     /// # Returns
     /// A TimelineWaveform containing the downsampled peak data
+    #[allow(dead_code)]
     pub fn from_wav_file(path: &Path, target_peaks: usize) -> Result<Self, Box<dyn Error>> {
         let mut reader = WavReader::open(path)?;
         let spec = reader.spec();
@@ -82,6 +94,134 @@ impl TimelineWaveform {
             duration,
             samples_per_peak,
         })
+    }
+
+    /// Calculate waveform from a WAV file with progress reporting
+    ///
+    /// This version sends progress updates through the provided channel,
+    /// allowing for async calculation with UI feedback.
+    pub fn from_wav_file_with_progress(
+        path: &Path,
+        target_peaks: usize,
+        progress_tx: Option<Sender<WaveformProgress>>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let mut reader = WavReader::open(path)?;
+        let spec = reader.spec();
+        let sample_rate = spec.sample_rate as f32;
+        let channels = spec.channels as usize;
+
+        // Read all samples and convert to mono f32
+        let samples: Vec<f32> = match spec.sample_format {
+            hound::SampleFormat::Int => {
+                let bits = spec.bits_per_sample;
+                let max_value = (1i32 << (bits - 1)) as f32;
+                reader
+                    .samples::<i32>()
+                    .filter_map(|s| s.ok())
+                    .map(|s| s as f32 / max_value)
+                    .collect()
+            }
+            hound::SampleFormat::Float => reader.samples::<f32>().filter_map(|s| s.ok()).collect(),
+        };
+
+        // Convert to mono if stereo
+        let mono_samples: Vec<f32> = if channels == 2 {
+            samples
+                .chunks_exact(2)
+                .map(|chunk| (chunk[0] + chunk[1]) / 2.0)
+                .collect()
+        } else {
+            samples
+        };
+
+        let total_samples = mono_samples.len();
+        let duration = total_samples as f32 / sample_rate;
+        let samples_per_peak = total_samples.div_ceil(target_peaks);
+
+        // Calculate peaks with progress reporting
+        let total_chunks = mono_samples.len().div_ceil(samples_per_peak);
+        let peaks: Vec<(f32, f32)> = mono_samples
+            .chunks(samples_per_peak)
+            .enumerate()
+            .map(|(idx, chunk)| {
+                // Send progress update every 100 chunks
+                if let Some(ref tx) = progress_tx
+                    && idx % 100 == 0
+                {
+                    let _ = tx.send(WaveformProgress {
+                        current: idx,
+                        total: total_chunks,
+                        percentage: (idx as f32 / total_chunks as f32) * 100.0,
+                    });
+                }
+
+                if chunk.is_empty() {
+                    (0.0, 0.0)
+                } else {
+                    let min = chunk.iter().copied().fold(f32::INFINITY, f32::min);
+                    let max = chunk.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                    (min, max)
+                }
+            })
+            .collect();
+
+        // Send final progress update
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send(WaveformProgress {
+                current: total_chunks,
+                total: total_chunks,
+                percentage: 100.0,
+            });
+        }
+
+        Ok(Self {
+            peaks,
+            duration,
+            samples_per_peak,
+        })
+    }
+
+    /// Get the cache file path for a given audio file
+    pub fn cache_path(audio_path: &Path) -> PathBuf {
+        audio_path.with_extension("wav.waveform")
+    }
+
+    /// Load waveform from cache file
+    pub fn from_cache(audio_path: &Path) -> Result<Self, Box<dyn Error>> {
+        let cache_path = Self::cache_path(audio_path);
+        let file = File::open(cache_path)?;
+        let reader = BufReader::new(file);
+        let waveform = bincode::deserialize_from(reader)?;
+        Ok(waveform)
+    }
+
+    /// Save waveform to cache file
+    pub fn save_to_cache(&self, audio_path: &Path) -> Result<(), Box<dyn Error>> {
+        let cache_path = Self::cache_path(audio_path);
+        let file = File::create(cache_path)?;
+        let writer = BufWriter::new(file);
+        bincode::serialize_into(writer, self)?;
+        Ok(())
+    }
+
+    /// Check if a valid cache exists for the given audio file
+    pub fn has_valid_cache(audio_path: &Path) -> bool {
+        let cache_path = Self::cache_path(audio_path);
+        if !cache_path.exists() {
+            return false;
+        }
+
+        // Check if cache is newer than audio file
+        if let (Ok(audio_meta), Ok(cache_meta)) = (
+            std::fs::metadata(audio_path),
+            std::fs::metadata(&cache_path),
+        ) && let (Ok(audio_time), Ok(cache_time)) =
+            (audio_meta.modified(), cache_meta.modified())
+        {
+            return cache_time >= audio_time;
+        }
+
+        false
     }
 
     /// Get the peak data for display

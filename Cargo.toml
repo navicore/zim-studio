@@ -34,13 +34,14 @@ fuzzy-matcher = { version = "0.3", optional = true }
 log = { version = "0.4", optional = true }
 simplelog = { version = "0.12", optional = true }
 serde_json = { version = "1", optional = true }
+bincode = { version = "1", optional = true }
 md5 = "0.8"
 uuid = { version = "1", features = ["v4"] }
 rayon = "1.10"
 
 [features]
 default = ["player"]
-player = ["ratatui", "crossterm", "rodio", "hound", "claxon", "fuzzy-matcher", "log", "simplelog", "serde_json"]
+player = ["ratatui", "crossterm", "rodio", "hound", "claxon", "fuzzy-matcher", "log", "simplelog", "serde_json", "bincode"]
 
 [dev-dependencies]
 tempfile = "3"

@@ -250,6 +250,19 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
 }
 
 fn draw_file_info_with_leds(f: &mut Frame, area: Rect, app: &App) {
+    // Show waveform calculation progress if present
+    if let Some(ref progress) = app.waveform_progress {
+        let progress_text = format!("Calculating waveform... {:.0}%", progress.percentage);
+        let progress_style = Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::ITALIC);
+        let progress_widget = Paragraph::new(progress_text)
+            .style(progress_style)
+            .alignment(Alignment::Center);
+        f.render_widget(progress_widget, area);
+        return;
+    }
+
     // Show editor message if present
     if let Some(ref message) = app.editor_message {
         let msg_style = Style::default()
