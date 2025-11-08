@@ -18,6 +18,7 @@ use super::audio::AudioEngine;
 use super::browser::Browser;
 use super::save_dialog::SaveDialog;
 use super::telemetry::{AudioTelemetry, TelemetryConfig};
+use super::timeline_waveform::{TimelineWaveform, WaveformProgress};
 use super::ui;
 use super::waveform::WaveformBuffer;
 use std::sync::mpsc;
@@ -35,6 +36,10 @@ pub struct App {
     pub is_playing: bool,
     pub audio_engine: Option<AudioEngine>,
     pub waveform_buffer: WaveformBuffer,
+    pub timeline_waveform: Option<TimelineWaveform>, // Full-timeline waveform for long file navigation
+    waveform_progress_rx: Option<mpsc::Receiver<WaveformProgress>>, // Progress updates for async waveform calculation
+    waveform_result_rx: Option<mpsc::Receiver<Result<TimelineWaveform, String>>>, // Completed waveform from background thread
+    pub waveform_progress: Option<WaveformProgress>, // Current waveform calculation progress
     samples_rx: Option<mpsc::Receiver<Vec<f32>>>,
     pub left_level: f32,
     pub right_level: f32,
@@ -46,7 +51,8 @@ pub struct App {
     pub mark_out: Option<f32>, // 0.0 to 1.0
     edit_counter: u32,         // Track number of edits this session
     pub save_dialog: Option<SaveDialog>,
-    pub is_looping: bool, // Whether we're looping the selection
+    pub is_looping: bool,                  // Whether we're looping the selection
+    pub show_timeline_while_playing: bool, // Toggle timeline view during playback (default: oscilloscope)
     pub view_mode: ViewMode,
     pub telemetry: AudioTelemetry,
     previous_left_level: f32,           // For slew gate rate calculation
@@ -66,6 +72,10 @@ impl App {
             is_playing: false,
             audio_engine: None,
             waveform_buffer: WaveformBuffer::new(4096),
+            timeline_waveform: None,
+            waveform_progress_rx: None,
+            waveform_result_rx: None,
+            waveform_progress: None,
             samples_rx: None,
             left_level: 0.0,
             right_level: 0.0,
@@ -78,6 +88,7 @@ impl App {
             edit_counter: 0,
             save_dialog: None,
             is_looping: false,
+            show_timeline_while_playing: false,
             view_mode: ViewMode::Player,
             telemetry: AudioTelemetry::new(),
             previous_left_level: 0.0,
@@ -98,6 +109,10 @@ impl App {
             self.samples_rx = Some(samples_rx);
         }
 
+        // Determine if we need to spawn waveform calculation
+        let mut should_spawn_waveform = false;
+        let path_string = path.to_string();
+
         // Load the file
         if let Some(engine) = &mut self.audio_engine {
             engine.load_file(std::path::Path::new(path))?;
@@ -110,12 +125,86 @@ impl App {
 
             self.current_file = Some(path.to_string());
 
+            // Calculate timeline waveform for WAV files (async, non-blocking)
+            let path_obj = std::path::Path::new(path);
+            let is_wav = path_obj
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.eq_ignore_ascii_case("wav"))
+                .unwrap_or(false);
+
+            if is_wav {
+                should_spawn_waveform = true;
+            } else {
+                // Non-WAV files don't get timeline waveforms
+                self.timeline_waveform = None;
+                self.waveform_progress = None;
+            }
+
             // Start playback automatically when file is loaded
             self.is_playing = true;
             engine.play();
         }
 
+        // Spawn waveform calculation if needed (outside the engine borrow)
+        if should_spawn_waveform {
+            self.spawn_waveform_calculation(path_string);
+        }
+
         Ok(())
+    }
+
+    /// Spawn background thread to calculate timeline waveform
+    fn spawn_waveform_calculation(&mut self, path: String) {
+        let (progress_tx, progress_rx) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
+
+        self.waveform_progress_rx = Some(progress_rx);
+        self.waveform_result_rx = Some(result_rx);
+        self.waveform_progress = Some(WaveformProgress {
+            current: 0,
+            total: 100,
+            percentage: 0.0,
+        });
+
+        // Spawn calculation thread
+        std::thread::spawn(move || {
+            let path_obj = std::path::Path::new(&path);
+            let result =
+                TimelineWaveform::from_wav_file_with_progress(path_obj, 1500, Some(progress_tx));
+
+            // Send result (success or error) back to main thread
+            let _ = result_tx.send(result.map_err(|e| e.to_string()));
+        });
+    }
+
+    /// Poll for waveform calculation updates (call this in the main loop)
+    pub fn poll_waveform_updates(&mut self) {
+        // Check for progress updates
+        if let Some(ref rx) = self.waveform_progress_rx {
+            while let Ok(progress) = rx.try_recv() {
+                self.waveform_progress = Some(progress);
+            }
+        }
+
+        // Check for completed waveform (success or failure)
+        if let Some(ref rx) = self.waveform_result_rx
+            && let Ok(result) = rx.try_recv()
+        {
+            match result {
+                Ok(waveform) => {
+                    self.timeline_waveform = Some(waveform);
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not calculate timeline waveform: {e}");
+                    // Could optionally show error in UI here
+                }
+            }
+            // Always clear progress indicator and cleanup channels
+            self.waveform_progress = None;
+            self.waveform_progress_rx = None;
+            self.waveform_result_rx = None;
+        }
     }
 
     pub fn load_files(
@@ -1367,6 +1456,9 @@ fn run_app<B: ratatui::backend::Backend>(
         // Update waveform data
         app.update_waveform();
 
+        // Poll for timeline waveform calculation updates
+        app.poll_waveform_updates();
+
         // Clear editor message after 3 seconds
         if let Some(timer) = app.editor_message_timer
             && timer.elapsed() > Duration::from_secs(3)
@@ -1698,6 +1790,10 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
                 app.enable_debug_telemetry();
                 info!("Audio telemetry enabled - press 't' again to disable");
             }
+        }
+        KeyCode::Char('w') => {
+            // Toggle timeline waveform view while playing
+            app.show_timeline_while_playing = !app.show_timeline_while_playing;
         }
         KeyCode::Char('n') => {
             // Next track in playlist

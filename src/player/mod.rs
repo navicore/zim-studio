@@ -13,6 +13,7 @@ pub mod mixed_source;
 pub mod save_dialog;
 pub mod save_dialog_ui;
 pub mod telemetry;
+pub mod timeline_waveform;
 pub mod ui;
 pub mod waveform;
 
