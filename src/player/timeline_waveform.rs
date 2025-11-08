@@ -6,9 +6,7 @@
 
 use hound::WavReader;
 use std::error::Error;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc::Sender;
 
 /// Progress update for waveform calculation
@@ -21,13 +19,14 @@ pub struct WaveformProgress {
 }
 
 /// Downsampled waveform data representing the entire audio timeline
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct TimelineWaveform {
     /// Peak min/max pairs for each downsampled segment
     peaks: Vec<(f32, f32)>,
     /// Duration of the audio file in seconds
     duration: f32,
     /// Number of samples per peak pair (for reference)
+    #[allow(dead_code)]
     samples_per_peak: usize,
 }
 
@@ -179,49 +178,6 @@ impl TimelineWaveform {
             duration,
             samples_per_peak,
         })
-    }
-
-    /// Get the cache file path for a given audio file
-    pub fn cache_path(audio_path: &Path) -> PathBuf {
-        audio_path.with_extension("wav.waveform")
-    }
-
-    /// Load waveform from cache file
-    pub fn from_cache(audio_path: &Path) -> Result<Self, Box<dyn Error>> {
-        let cache_path = Self::cache_path(audio_path);
-        let file = File::open(cache_path)?;
-        let reader = BufReader::new(file);
-        let waveform = bincode::deserialize_from(reader)?;
-        Ok(waveform)
-    }
-
-    /// Save waveform to cache file
-    pub fn save_to_cache(&self, audio_path: &Path) -> Result<(), Box<dyn Error>> {
-        let cache_path = Self::cache_path(audio_path);
-        let file = File::create(cache_path)?;
-        let writer = BufWriter::new(file);
-        bincode::serialize_into(writer, self)?;
-        Ok(())
-    }
-
-    /// Check if a valid cache exists for the given audio file
-    pub fn has_valid_cache(audio_path: &Path) -> bool {
-        let cache_path = Self::cache_path(audio_path);
-        if !cache_path.exists() {
-            return false;
-        }
-
-        // Check if cache is newer than audio file
-        if let (Ok(audio_meta), Ok(cache_meta)) = (
-            std::fs::metadata(audio_path),
-            std::fs::metadata(&cache_path),
-        ) && let (Ok(audio_time), Ok(cache_time)) =
-            (audio_meta.modified(), cache_meta.modified())
-        {
-            return cache_time >= audio_time;
-        }
-
-        false
     }
 
     /// Get the peak data for display

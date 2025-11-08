@@ -123,25 +123,10 @@ impl App {
 
             self.current_file = Some(path.to_string());
 
-            // Check for timeline waveform (sync cache loading only)
+            // Calculate timeline waveform for WAV files (async, non-blocking)
             let path_obj = std::path::Path::new(path);
             if path_obj.extension().and_then(|s| s.to_str()) == Some("wav") {
-                // Try to load from cache first
-                if TimelineWaveform::has_valid_cache(path_obj) {
-                    match TimelineWaveform::from_cache(path_obj) {
-                        Ok(waveform) => {
-                            self.timeline_waveform = Some(waveform);
-                            self.waveform_progress = None;
-                        }
-                        Err(e) => {
-                            eprintln!("Warning: Could not load waveform cache: {e}");
-                            should_spawn_waveform = true;
-                        }
-                    }
-                } else {
-                    // No cache available
-                    should_spawn_waveform = true;
-                }
+                should_spawn_waveform = true;
             } else {
                 // Non-WAV files don't get timeline waveforms
                 self.timeline_waveform = None;
@@ -179,10 +164,6 @@ impl App {
             let path_obj = std::path::Path::new(&path);
             match TimelineWaveform::from_wav_file_with_progress(path_obj, 1500, Some(progress_tx)) {
                 Ok(waveform) => {
-                    // Try to save to cache
-                    if let Err(e) = waveform.save_to_cache(path_obj) {
-                        eprintln!("Warning: Could not save waveform cache: {e}");
-                    }
                     // Send completed waveform back to main thread
                     let _ = result_tx.send(waveform);
                 }
