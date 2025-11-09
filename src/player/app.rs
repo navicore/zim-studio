@@ -61,6 +61,7 @@ pub struct App {
     editor_message_timer: Option<std::time::Instant>, // When to clear the message
     pub playlist: Option<Vec<String>>,  // Playlist of files to play sequentially
     pub playlist_index: usize,          // Current position in playlist (0-based)
+    playlist_total_duration: Option<Duration>, // Cached total duration of all playlist tracks
     is_loading_track: bool,             // Guard against race conditions during track loading
 }
 
@@ -97,6 +98,7 @@ impl App {
             editor_message_timer: None,
             playlist: None,
             playlist_index: 0,
+            playlist_total_duration: None,
             is_loading_track: false,
         }
     }
@@ -335,14 +337,20 @@ impl App {
         self.playlist_index > 0
     }
 
-    /// Calculate total duration of all files in the playlist
+    /// Calculate total duration of all files in a playlist
+    ///
+    /// # Arguments
+    ///
+    /// * `playlist` - Slice of file paths to calculate duration for
     ///
     /// # Returns
     ///
     /// `Some(Duration)` with the sum of all track durations, or `None` if playlist is empty
     /// or any file duration cannot be determined.
-    fn calculate_playlist_total_duration(&self) -> Option<std::time::Duration> {
-        let playlist = self.playlist.as_ref()?;
+    fn calculate_playlist_total_duration(playlist: &[String]) -> Option<Duration> {
+        if playlist.is_empty() {
+            return None;
+        }
 
         let mut total_seconds = 0.0;
         for file_path in playlist {
@@ -358,7 +366,7 @@ impl App {
             }
         }
 
-        Some(std::time::Duration::from_secs_f64(total_seconds))
+        Some(Duration::from_secs_f64(total_seconds))
     }
 
     /// Get current playlist position as a formatted string with total duration.
@@ -367,13 +375,13 @@ impl App {
     ///
     /// `Some("1/6 [35:42 total]")` if a playlist is active, `None` otherwise.
     /// The format is `current_track/total_tracks [HH:MM:SS total]` (1-indexed).
-    /// If total duration cannot be calculated, returns just the track position.
+    /// If total duration is not cached, returns just the track position.
     pub fn get_playlist_position(&self) -> Option<String> {
         self.playlist.as_ref().map(|pl| {
             let position = format!("{}/{}", self.playlist_index + 1, pl.len());
 
-            // Try to add total duration
-            if let Some(total_duration) = self.calculate_playlist_total_duration() {
+            // Add cached total duration if available
+            if let Some(total_duration) = self.playlist_total_duration {
                 let total_secs = total_duration.as_secs();
                 let hours = total_secs / 3600;
                 let minutes = (total_secs % 3600) / 60;
@@ -1352,9 +1360,10 @@ pub fn run_with_playlist(file_paths: &[String]) -> Result<(), Box<dyn Error>> {
         log::error!("Could not scan directory: {e}");
     }
 
-    // Set up playlist
+    // Set up playlist and calculate total duration once
     app.playlist = Some(file_paths.to_vec());
     app.playlist_index = 0;
+    app.playlist_total_duration = App::calculate_playlist_total_duration(file_paths);
 
     // Load first track
     if !file_paths.is_empty()
@@ -2113,5 +2122,37 @@ mod tests {
         let pos_str = position.unwrap();
         // Should show "2/3" at minimum, may include total duration if files exist
         assert!(pos_str.starts_with("2/3"));
+    }
+
+    #[test]
+    fn test_get_playlist_position_with_cached_duration() {
+        let mut app = App::new();
+        app.playlist = Some(vec!["file1.flac".to_string(), "file2.flac".to_string()]);
+        app.playlist_index = 0;
+        // Simulate cached total duration (2 minutes 30 seconds)
+        app.playlist_total_duration = Some(Duration::from_secs(150));
+
+        let position = app.get_playlist_position();
+        assert!(position.is_some());
+
+        let pos_str = position.unwrap();
+        // Should show "1/2 [02:30 total]"
+        assert_eq!(pos_str, "1/2 [02:30 total]");
+    }
+
+    #[test]
+    fn test_get_playlist_position_with_cached_duration_hours() {
+        let mut app = App::new();
+        app.playlist = Some(vec!["file1.flac".to_string()]);
+        app.playlist_index = 0;
+        // Simulate cached total duration (1 hour 23 minutes 45 seconds)
+        app.playlist_total_duration = Some(Duration::from_secs(5025));
+
+        let position = app.get_playlist_position();
+        assert!(position.is_some());
+
+        let pos_str = position.unwrap();
+        // Should show "1/1 [01:23:45 total]"
+        assert_eq!(pos_str, "1/1 [01:23:45 total]");
     }
 }
