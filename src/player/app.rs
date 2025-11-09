@@ -335,16 +335,59 @@ impl App {
         self.playlist_index > 0
     }
 
-    /// Get current playlist position as a formatted string.
+    /// Calculate total duration of all files in the playlist
     ///
     /// # Returns
     ///
-    /// `Some("1/6")` if a playlist is active, `None` otherwise.
-    /// The format is `current_track/total_tracks` (1-indexed).
+    /// `Some(Duration)` with the sum of all track durations, or `None` if playlist is empty
+    /// or any file duration cannot be determined.
+    fn calculate_playlist_total_duration(&self) -> Option<std::time::Duration> {
+        let playlist = self.playlist.as_ref()?;
+
+        let mut total_seconds = 0.0;
+        for file_path in playlist {
+            let path = std::path::Path::new(file_path);
+            if let Ok(metadata) = crate::media::metadata::read_audio_metadata(path) {
+                if let Some(duration) = metadata.duration_seconds {
+                    total_seconds += duration;
+                } else {
+                    return None; // Can't get duration for this file
+                }
+            } else {
+                return None; // Can't read metadata for this file
+            }
+        }
+
+        Some(std::time::Duration::from_secs_f64(total_seconds))
+    }
+
+    /// Get current playlist position as a formatted string with total duration.
+    ///
+    /// # Returns
+    ///
+    /// `Some("1/6 [35:42 total]")` if a playlist is active, `None` otherwise.
+    /// The format is `current_track/total_tracks [HH:MM:SS total]` (1-indexed).
+    /// If total duration cannot be calculated, returns just the track position.
     pub fn get_playlist_position(&self) -> Option<String> {
-        self.playlist
-            .as_ref()
-            .map(|pl| format!("{}/{}", self.playlist_index + 1, pl.len()))
+        self.playlist.as_ref().map(|pl| {
+            let position = format!("{}/{}", self.playlist_index + 1, pl.len());
+
+            // Try to add total duration
+            if let Some(total_duration) = self.calculate_playlist_total_duration() {
+                let total_secs = total_duration.as_secs();
+                let hours = total_secs / 3600;
+                let minutes = (total_secs % 3600) / 60;
+                let seconds = total_secs % 60;
+
+                if hours > 0 {
+                    format!("{position} [{hours:02}:{minutes:02}:{seconds:02} total]")
+                } else {
+                    format!("{position} [{minutes:02}:{seconds:02} total]")
+                }
+            } else {
+                position
+            }
+        })
     }
 
     /// Enable telemetry with default debugging configuration
@@ -2046,5 +2089,29 @@ mod tests {
 
         assert_eq!(app.left_level, 0.0);
         assert_eq!(app.right_level, 0.0);
+    }
+
+    #[test]
+    fn test_get_playlist_position_no_playlist() {
+        let app = App::new();
+        assert_eq!(app.get_playlist_position(), None);
+    }
+
+    #[test]
+    fn test_get_playlist_position_basic() {
+        let mut app = App::new();
+        app.playlist = Some(vec![
+            "file1.flac".to_string(),
+            "file2.flac".to_string(),
+            "file3.flac".to_string(),
+        ]);
+        app.playlist_index = 1; // Second track (0-indexed)
+
+        let position = app.get_playlist_position();
+        assert!(position.is_some());
+
+        let pos_str = position.unwrap();
+        // Should show "2/3" at minimum, may include total duration if files exist
+        assert!(pos_str.starts_with("2/3"));
     }
 }
