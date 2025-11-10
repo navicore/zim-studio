@@ -1,11 +1,15 @@
 use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs;
 use std::path::Path;
-use zim_studio::constants::{AUDIO_EXTENSIONS, SIDECAR_EXTENSION};
-use zim_studio::utils::{progress::create_progress_spinner, validation::validate_path_exists};
+use zim_studio::constants::{AUDIO_EXTENSIONS, YAML_DELIMITER};
+use zim_studio::utils::{
+    parallel_scan, progress::create_progress_spinner, sidecar::get_sidecar_path,
+    validation::validate_path_exists,
+};
+use zim_studio::zimignore::ZimIgnore;
 
 /// Track metadata extracted from sidecar file
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,12 +58,26 @@ pub fn handle_index(project_path: &str) -> Result<(), Box<dyn Error>> {
     );
     println!();
 
+    let audio_extensions: HashSet<&str> = AUDIO_EXTENSIONS.iter().cloned().collect();
+    let zimignore = ZimIgnore::load_for_directory(project_path);
+
     let spinner = create_progress_spinner();
     spinner.set_message("Scanning for audio files with sidecars...");
 
-    // Collect audio files with sidecars
+    // Collect all audio files recursively, respecting .zimignore
+    let audio_files =
+        parallel_scan::collect_audio_files(project_path, &audio_extensions, &zimignore)?;
+
+    // Filter to only files that have sidecars and read their metadata
     let mut tracks = Vec::new();
-    collect_tracks(project_path, &mut tracks)?;
+    for audio_path in &audio_files {
+        let sidecar_path = get_sidecar_path(audio_path);
+        if sidecar_path.exists()
+            && let Ok(track_info) = read_track_info(audio_path, &sidecar_path)
+        {
+            tracks.push(track_info);
+        }
+    }
 
     spinner.finish_and_clear();
 
@@ -126,56 +144,19 @@ pub fn handle_index(project_path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn collect_tracks(dir: &Path, tracks: &mut Vec<TrackInfo>) -> Result<(), Box<dyn Error>> {
-    let entries = fs::read_dir(dir)?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Skip hidden files
-        if let Some(name) = path.file_name()
-            && name.to_string_lossy().starts_with('.')
-        {
-            continue;
-        }
-
-        if path.is_file() {
-            // Check if it's an audio file
-            if let Some(ext) = path.extension()
-                && let Some(ext_str) = ext.to_str()
-            {
-                let ext_lower = ext_str.to_lowercase();
-                if AUDIO_EXTENSIONS.contains(&ext_lower.as_str()) {
-                    // Check for sidecar
-                    let sidecar_path =
-                        path.with_extension(format!("{ext_str}.{SIDECAR_EXTENSION}"));
-                    if sidecar_path.exists() {
-                        // Read track info from sidecar
-                        if let Ok(track_info) = read_track_info(&path, &sidecar_path) {
-                            tracks.push(track_info);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
 fn read_track_info(audio_path: &Path, sidecar_path: &Path) -> Result<TrackInfo, Box<dyn Error>> {
     let content = fs::read_to_string(sidecar_path)?;
 
-    // Parse YAML frontmatter
-    if !content.starts_with("---\n") {
+    // Parse YAML frontmatter using the same pattern as lint.rs
+    if !content.starts_with(YAML_DELIMITER) {
         return Err("No YAML frontmatter found".into());
     }
 
-    let end_index = content[4..]
-        .find("\n---\n")
+    let delimiter_len = YAML_DELIMITER.len();
+    let end_index = content[delimiter_len..]
+        .find(&format!("\n{YAML_DELIMITER}"))
         .ok_or("Invalid YAML frontmatter")?;
-    let yaml_content = &content[4..4 + end_index];
+    let yaml_content = &content[delimiter_len..delimiter_len + end_index];
 
     let yaml: HashMap<String, serde_yaml::Value> = serde_yaml::from_str(yaml_content)?;
 
