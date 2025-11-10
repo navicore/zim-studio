@@ -70,12 +70,22 @@ pub fn handle_index(project_path: &str) -> Result<(), Box<dyn Error>> {
 
     // Filter to only files that have sidecars and read their metadata
     let mut tracks = Vec::new();
+    let mut skipped_count = 0;
     for audio_path in &audio_files {
         let sidecar_path = get_sidecar_path(audio_path);
-        if sidecar_path.exists()
-            && let Ok(track_info) = read_track_info(audio_path, &sidecar_path)
-        {
-            tracks.push(track_info);
+        if sidecar_path.exists() {
+            match read_track_info(audio_path, &sidecar_path) {
+                Ok(track_info) => tracks.push(track_info),
+                Err(e) => {
+                    skipped_count += 1;
+                    eprintln!(
+                        "  {} Skipped {}: {}",
+                        "⚠".yellow(),
+                        audio_path.display().to_string().bright_black(),
+                        e.to_string().bright_black()
+                    );
+                }
+            }
         }
     }
 
@@ -127,9 +137,16 @@ pub fn handle_index(project_path: &str) -> Result<(), Box<dyn Error>> {
     );
     println!(
         "  {} {} tracks",
-        "Tracks:".bright_black(),
+        "Indexed:".bright_black(),
         tracks.len().to_string().cyan()
     );
+    if skipped_count > 0 {
+        println!(
+            "  {} {} files (could not parse metadata)",
+            "Skipped:".bright_black(),
+            skipped_count.to_string().yellow()
+        );
+    }
     if let Some(duration) = total_duration {
         let total_mins = (duration / 60.0) as u32;
         let total_secs = (duration % 60.0) as u32;
@@ -153,10 +170,12 @@ fn read_track_info(audio_path: &Path, sidecar_path: &Path) -> Result<TrackInfo, 
     }
 
     let delimiter_len = YAML_DELIMITER.len();
-    let end_index = content[delimiter_len..]
-        .find(&format!("\n{YAML_DELIMITER}"))
+    let rest = &content[delimiter_len..];
+    let closing_delimiter = format!("\n{YAML_DELIMITER}");
+    let end_index = rest
+        .find(&closing_delimiter)
         .ok_or("Invalid YAML frontmatter")?;
-    let yaml_content = &content[delimiter_len..delimiter_len + end_index];
+    let yaml_content = &rest[..end_index];
 
     let yaml: HashMap<String, serde_yaml::Value> = serde_yaml::from_str(yaml_content)?;
 
@@ -177,6 +196,7 @@ fn read_track_info(audio_path: &Path, sidecar_path: &Path) -> Result<TrackInfo, 
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    // Duration can be either a number or "unknown" - only include numeric values in index
     let duration = yaml.get("duration").and_then(|v| v.as_f64());
 
     let sample_rate = yaml
