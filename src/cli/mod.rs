@@ -1,5 +1,6 @@
 pub mod add;
 pub mod config;
+pub mod index;
 pub mod init;
 pub mod lint;
 pub mod new;

@@ -83,6 +83,12 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Generate an index.yml file with consolidated track metadata
+    Index {
+        /// Path to project (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: String,
+    },
     /// Sync technical metadata in sidecar files with current audio file properties
     Sync {
         /// Path to project (defaults to current directory)
@@ -239,6 +245,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Commands::Lint { path } => {
             cli::lint::handle_lint(&path)?;
+        }
+        Commands::Index { path } => {
+            cli::index::handle_index(&path)?;
         }
         Commands::Sync { path } => {
             cli::sync::handle_sync(&path)?;
