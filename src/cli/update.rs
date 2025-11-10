@@ -530,13 +530,13 @@ fn offer_metadata_update(
     };
 
     if let Some(ref metadata) = audio_metadata {
-        // Check duration
+        // Check duration (field is called "duration" in YAML, not "duration_seconds")
         if let Some(new_duration) = metadata.duration_seconds
-            && let Some(old_duration) = yaml_data.get("duration_seconds").and_then(|v| v.as_f64())
+            && let Some(old_duration) = yaml_data.get("duration").and_then(|v| v.as_f64())
             && (old_duration - new_duration).abs() > 0.01
         {
             changes.push(format!(
-                "  duration_seconds: {} → {}",
+                "  duration: {} → {}",
                 format!("{old_duration:.2}").red(),
                 format!("{new_duration:.2}").green()
             ));
@@ -616,8 +616,9 @@ fn offer_metadata_update(
 
         if let Some(metadata) = audio_metadata {
             if let Some(duration) = metadata.duration_seconds {
+                // Update "duration" field (not "duration_seconds") to match template output
                 updated_yaml.insert(
-                    "duration_seconds".to_string(),
+                    "duration".to_string(),
                     serde_yaml::Value::Number(serde_yaml::Number::from(duration)),
                 );
             }
