@@ -17,7 +17,7 @@ use ratatui::{
     },
 };
 
-use super::app::{App, ViewMode};
+use super::app::{App, ViewMode, WaveformDisplayMode};
 use super::save_dialog_ui::draw_save_dialog;
 
 // UI Constants
@@ -218,18 +218,10 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         }));
     }
 
-    // Scatter mode toggle for oscilloscope
-    let scatter_style = if app.scatter_mode {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    controls_row2.push(create_control_button("m", scatter_style));
-    controls_row2.push(Span::raw(if app.scatter_mode {
-        " scatter ●  "
-    } else {
-        " scatter  "
-    }));
+    // Waveform display mode indicator (cycles: line → scatter → vector)
+    let mode_style = Style::default().fg(Color::Yellow);
+    controls_row2.push(create_control_button("m", mode_style));
+    controls_row2.push(Span::raw(format!(" {}  ", app.waveform_display_mode.label())));
 
     controls_row2.extend(create_control(
         "s",
@@ -383,29 +375,133 @@ fn get_led_color(level: f32, is_left: bool) -> Color {
 }
 
 fn draw_oscilloscope(f: &mut Frame, area: Rect, app: &App) {
-    // First, draw the grid as a Canvas layer
+    match app.waveform_display_mode {
+        WaveformDisplayMode::Vectorscope => {
+            draw_vectorscope(f, area, app);
+        }
+        _ => {
+            // Line or Scatter mode - draw oscilloscope with grid
+            let grid_canvas = Canvas::default()
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Cyan)),
+                )
+                .paint(|ctx| {
+                    draw_grid(ctx, area);
+                })
+                .x_bounds([0.0, area.width as f64])
+                .y_bounds([-1.0, 1.0]);
+
+            f.render_widget(grid_canvas, area);
+
+            // Calculate inner area (inside borders)
+            let inner_area = area.inner(ratatui::layout::Margin {
+                horizontal: 1,
+                vertical: 1,
+            });
+
+            // Draw the waveform using Chart with braille/scatter markers
+            draw_waveform_chart(f, inner_area, app);
+        }
+    }
+}
+
+/// Draw vectorscope visualization (X/Y plot of left vs right channel)
+fn draw_vectorscope(f: &mut Frame, area: Rect, app: &App) {
+    // Draw vectorscope grid (crosshairs and circular guides)
     let grid_canvas = Canvas::default()
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
+                .border_style(Style::default().fg(Color::Magenta))
+                .title(" Vectorscope (L/R) "),
         )
         .paint(|ctx| {
-            draw_grid(ctx, area);
+            draw_vectorscope_grid(ctx, area);
         })
-        .x_bounds([0.0, area.width as f64])
+        .x_bounds([-1.0, 1.0])
         .y_bounds([-1.0, 1.0]);
 
     f.render_widget(grid_canvas, area);
 
-    // Calculate inner area (inside borders)
+    // Calculate inner area
     let inner_area = area.inner(ratatui::layout::Margin {
         horizontal: 1,
         vertical: 1,
     });
 
-    // Now draw the waveform using Chart with braille markers
-    draw_waveform_chart(f, inner_area, app);
+    // Get vectorscope points (left, right pairs)
+    let points = app.waveform_buffer.get_vectorscope_points(inner_area.width as usize * 4);
+
+    if points.is_empty() {
+        return;
+    }
+
+    // Create dataset for the vectorscope plot
+    let datasets = vec![Dataset::default()
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Scatter)
+        .style(Style::default().fg(Color::Rgb(0, 255, 150)))
+        .data(&points)];
+
+    let chart = Chart::new(datasets)
+        .x_axis(
+            Axis::default()
+                .bounds([-1.0, 1.0])
+                .labels::<Vec<Span>>(vec![]),
+        )
+        .y_axis(
+            Axis::default()
+                .bounds([-1.0, 1.0])
+                .labels::<Vec<Span>>(vec![]),
+        );
+
+    f.render_widget(chart, inner_area);
+}
+
+/// Draw vectorscope grid with crosshairs
+fn draw_vectorscope_grid(ctx: &mut Context, _area: Rect) {
+    let center_x = 0.0;
+    let center_y = 0.0;
+
+    // Vertical center line (mono signal appears here)
+    ctx.draw(&ratatui::widgets::canvas::Line {
+        x1: center_x,
+        y1: -1.0,
+        x2: center_x,
+        y2: 1.0,
+        color: Color::Rgb(60, 60, 80),
+    });
+
+    // Horizontal center line
+    ctx.draw(&ratatui::widgets::canvas::Line {
+        x1: -1.0,
+        y1: center_y,
+        x2: 1.0,
+        y2: center_y,
+        color: Color::Rgb(60, 60, 80),
+    });
+
+    // Diagonal lines (45 degree stereo spread guides)
+    // These show +/- 45 degree phase relationships
+    ctx.draw(&ratatui::widgets::canvas::Line {
+        x1: -0.9,
+        y1: -0.9,
+        x2: 0.9,
+        y2: 0.9,
+        color: Color::Rgb(40, 40, 60),
+    });
+    ctx.draw(&ratatui::widgets::canvas::Line {
+        x1: -0.9,
+        y1: 0.9,
+        x2: 0.9,
+        y2: -0.9,
+        color: Color::Rgb(40, 40, 60),
+    });
+
+    // Reference circles at 0.5 and 1.0 radius would be nice but Canvas
+    // doesn't have circle primitive, so we skip for now
 }
 
 fn draw_grid(ctx: &mut Context, area: Rect) {
@@ -505,11 +601,10 @@ fn draw_waveform_chart(f: &mut Frame, area: Rect, app: &App) {
         (demo.clone(), demo)
     };
 
-    // Choose marker and graph type based on scatter mode
-    let (marker, graph_type) = if app.scatter_mode {
-        (symbols::Marker::Dot, GraphType::Scatter) // Vintage oscilloscope look
-    } else {
-        (symbols::Marker::Braille, GraphType::Line) // Smooth connected lines
+    // Choose marker and graph type based on display mode
+    let (marker, graph_type) = match app.waveform_display_mode {
+        WaveformDisplayMode::Scatter => (symbols::Marker::Dot, GraphType::Scatter), // Vintage look
+        _ => (symbols::Marker::Braille, GraphType::Line), // Smooth connected lines
     };
 
     // Create datasets

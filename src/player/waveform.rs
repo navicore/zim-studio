@@ -4,11 +4,21 @@
 //! display. It maintains a fixed-size circular buffer that automatically discards
 //! old samples as new ones arrive, providing a sliding window view of the audio
 //! waveform suitable for real-time visualization.
+//!
+//! Also supports vectorscope visualization by storing stereo sample pairs.
 
 use std::collections::VecDeque;
 
+/// A stereo sample pair (left, right)
+#[derive(Clone, Copy, Debug)]
+pub struct StereoSample {
+    pub left: f32,
+    pub right: f32,
+}
+
 pub struct WaveformBuffer {
     samples: VecDeque<f32>,
+    stereo_samples: VecDeque<StereoSample>, // For vectorscope
     max_samples: usize,
 }
 
@@ -16,10 +26,12 @@ impl WaveformBuffer {
     pub fn new(max_samples: usize) -> Self {
         Self {
             samples: VecDeque::with_capacity(max_samples),
+            stereo_samples: VecDeque::with_capacity(max_samples),
             max_samples,
         }
     }
 
+    /// Push mono samples (or mixed-down stereo) for oscilloscope display
     pub fn push_samples(&mut self, new_samples: &[f32]) {
         for &sample in new_samples {
             self.samples.push_back(sample);
@@ -28,6 +40,60 @@ impl WaveformBuffer {
                 self.samples.pop_front();
             }
         }
+    }
+
+    /// Push interleaved stereo samples for both oscilloscope and vectorscope
+    /// Samples should be in [L, R, L, R, ...] format
+    pub fn push_stereo_samples(&mut self, new_samples: &[f32]) {
+        // Push to mono buffer (mixed down for oscilloscope)
+        for chunk in new_samples.chunks(2) {
+            if chunk.len() == 2 {
+                let mixed = (chunk[0] + chunk[1]) / 2.0;
+                self.samples.push_back(mixed);
+                while self.samples.len() > self.max_samples {
+                    self.samples.pop_front();
+                }
+
+                // Also store as stereo pair for vectorscope
+                self.stereo_samples.push_back(StereoSample {
+                    left: chunk[0],
+                    right: chunk[1],
+                });
+                while self.stereo_samples.len() > self.max_samples {
+                    self.stereo_samples.pop_front();
+                }
+            }
+        }
+    }
+
+    /// Get stereo sample pairs for vectorscope display
+    /// Returns up to `count` most recent (left, right) pairs with amplification
+    pub fn get_vectorscope_points(&self, count: usize) -> Vec<(f64, f64)> {
+        // Amplification factor to spread out the display
+        // Most recordings have moderate levels, so boost to fill the scope
+        const VECTORSCOPE_GAIN: f64 = 2.5;
+
+        if self.stereo_samples.is_empty() {
+            return vec![];
+        }
+
+        // Downsample if we have more samples than requested
+        let total = self.stereo_samples.len();
+        let step = (total as f32 / count as f32).max(1.0);
+
+        (0..count.min(total))
+            .map(|i| {
+                let idx = (i as f32 * step) as usize;
+                if let Some(sample) = self.stereo_samples.get(idx) {
+                    // Apply gain and clamp to display bounds
+                    let left = (sample.left as f64 * VECTORSCOPE_GAIN).clamp(-0.98, 0.98);
+                    let right = (sample.right as f64 * VECTORSCOPE_GAIN).clamp(-0.98, 0.98);
+                    (left, right)
+                } else {
+                    (0.0, 0.0)
+                }
+            })
+            .collect()
     }
 
     /// Get min/max pairs for peak-to-peak display without trigger stabilization.
