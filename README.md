@@ -377,3 +377,9 @@ The stereo LED indicators show real-time audio levels:
 ## License
 
 MIT
+
+---
+
+## Acknowledgments
+
+Oscilloscope visualization techniques (braille rendering, trigger stabilization, vectorscope) inspired by [scope-tui](https://github.com/alemidev/scope-tui) (MIT).
