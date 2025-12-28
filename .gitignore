@@ -2,6 +2,7 @@
 /target/
 **/*.rs.bk
 *.log
+.claude/
 
 # IDE files
 .idea/

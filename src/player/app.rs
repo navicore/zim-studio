@@ -30,6 +30,35 @@ pub enum ViewMode {
     Browser,
 }
 
+/// Waveform visualization display mode
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum WaveformDisplayMode {
+    #[default]
+    Line, // Braille markers with connected lines (smooth)
+    Scatter,     // Dot markers as individual points (vintage)
+    Vectorscope, // X/Y plot of left vs right channel (stereo phase)
+}
+
+impl WaveformDisplayMode {
+    /// Cycle to the next display mode
+    pub fn next(self) -> Self {
+        match self {
+            Self::Line => Self::Scatter,
+            Self::Scatter => Self::Vectorscope,
+            Self::Vectorscope => Self::Line,
+        }
+    }
+
+    /// Get display name for UI
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Line => "line",
+            Self::Scatter => "scatter",
+            Self::Vectorscope => "vector",
+        }
+    }
+}
+
 pub struct App {
     pub should_quit: bool,
     pub current_file: Option<String>,
@@ -53,6 +82,7 @@ pub struct App {
     pub save_dialog: Option<SaveDialog>,
     pub is_looping: bool,                  // Whether we're looping the selection
     pub show_timeline_while_playing: bool, // Toggle timeline view during playback (default: oscilloscope)
+    pub waveform_display_mode: WaveformDisplayMode, // Line, Scatter, or Vectorscope
     pub view_mode: ViewMode,
     pub telemetry: AudioTelemetry,
     previous_left_level: f32,           // For slew gate rate calculation
@@ -90,6 +120,7 @@ impl App {
             save_dialog: None,
             is_looping: false,
             show_timeline_while_playing: false,
+            waveform_display_mode: WaveformDisplayMode::default(),
             view_mode: ViewMode::Player,
             telemetry: AudioTelemetry::new(),
             previous_left_level: 0.0,
@@ -445,7 +476,12 @@ impl App {
 
         if let Some(rx) = &self.samples_rx {
             while let Ok(samples) = rx.try_recv() {
-                self.waveform_buffer.push_samples(&samples);
+                // Use stereo push for vectorscope support when audio is stereo
+                if self.is_stereo {
+                    self.waveform_buffer.push_stereo_samples(&samples);
+                } else {
+                    self.waveform_buffer.push_samples(&samples);
+                }
                 if !samples.is_empty() {
                     samples_to_process.push(samples);
                 }
@@ -1825,6 +1861,10 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
         KeyCode::Char('w') => {
             // Toggle timeline waveform view while playing
             app.show_timeline_while_playing = !app.show_timeline_while_playing;
+        }
+        KeyCode::Char('m') => {
+            // Cycle waveform display mode: Line → Scatter → Vectorscope → Line
+            app.waveform_display_mode = app.waveform_display_mode.next();
         }
         KeyCode::Char('n') => {
             // Next track in playlist

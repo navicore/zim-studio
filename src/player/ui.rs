@@ -9,14 +9,15 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols,
     text::{Line, Span},
     widgets::{
-        Block, Borders, Gauge, Paragraph,
+        Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Paragraph,
         canvas::{Canvas, Context},
     },
 };
 
-use super::app::{App, ViewMode};
+use super::app::{App, ViewMode, WaveformDisplayMode};
 use super::save_dialog_ui::draw_save_dialog;
 
 // UI Constants
@@ -217,6 +218,14 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         }));
     }
 
+    // Waveform display mode indicator (cycles: line → scatter → vector)
+    let mode_style = Style::default().fg(Color::Yellow);
+    controls_row2.push(create_control_button("m", mode_style));
+    controls_row2.push(Span::raw(format!(
+        " {}  ",
+        app.waveform_display_mode.label()
+    )));
+
     controls_row2.extend(create_control(
         "s",
         "save",
@@ -369,33 +378,137 @@ fn get_led_color(level: f32, is_left: bool) -> Color {
 }
 
 fn draw_oscilloscope(f: &mut Frame, area: Rect, app: &App) {
-    // Create oscilloscope-style canvas
-    let canvas = Canvas::default()
+    match app.waveform_display_mode {
+        WaveformDisplayMode::Vectorscope => {
+            draw_vectorscope(f, area, app);
+        }
+        _ => {
+            // Line or Scatter mode - draw oscilloscope with grid
+            let grid_canvas = Canvas::default()
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Cyan)),
+                )
+                .paint(|ctx| {
+                    draw_grid(ctx, area);
+                })
+                .x_bounds([0.0, area.width as f64])
+                .y_bounds([-1.0, 1.0]);
+
+            f.render_widget(grid_canvas, area);
+
+            // Calculate inner area (inside borders)
+            let inner_area = area.inner(ratatui::layout::Margin {
+                horizontal: 1,
+                vertical: 1,
+            });
+
+            // Draw the waveform using Chart with braille/scatter markers
+            draw_waveform_chart(f, inner_area, app);
+        }
+    }
+}
+
+/// Draw vectorscope visualization (X/Y plot of left vs right channel)
+fn draw_vectorscope(f: &mut Frame, area: Rect, app: &App) {
+    // Draw vectorscope grid (crosshairs and circular guides)
+    let grid_canvas = Canvas::default()
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
+                .border_style(Style::default().fg(Color::Magenta))
+                .title(" Vectorscope (L/R) "),
         )
         .paint(|ctx| {
-            // Draw grid
-            draw_grid(ctx, area);
-
-            // Draw waveform (real data or demo)
-            draw_waveform(ctx, area, app);
-
-            // Draw center reference line
-            ctx.draw(&ratatui::widgets::canvas::Line {
-                x1: 0.0,
-                y1: 0.0,
-                x2: area.width as f64,
-                y2: 0.0,
-                color: Color::Rgb(0, 100, 50), // Darker green for reference
-            });
+            draw_vectorscope_grid(ctx, area);
         })
-        .x_bounds([0.0, area.width as f64])
+        .x_bounds([-1.0, 1.0])
         .y_bounds([-1.0, 1.0]);
 
-    f.render_widget(canvas, area);
+    f.render_widget(grid_canvas, area);
+
+    // Calculate inner area
+    let inner_area = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
+
+    // Get vectorscope points (left, right pairs)
+    let points = app
+        .waveform_buffer
+        .get_vectorscope_points(inner_area.width as usize * 4);
+
+    if points.is_empty() {
+        return;
+    }
+
+    // Create dataset for the vectorscope plot
+    let datasets = vec![
+        Dataset::default()
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Scatter)
+            .style(Style::default().fg(Color::Rgb(0, 255, 150)))
+            .data(&points),
+    ];
+
+    let chart = Chart::new(datasets)
+        .x_axis(
+            Axis::default()
+                .bounds([-1.0, 1.0])
+                .labels::<Vec<Span>>(vec![]),
+        )
+        .y_axis(
+            Axis::default()
+                .bounds([-1.0, 1.0])
+                .labels::<Vec<Span>>(vec![]),
+        );
+
+    f.render_widget(chart, inner_area);
+}
+
+/// Draw vectorscope grid with crosshairs
+fn draw_vectorscope_grid(ctx: &mut Context, _area: Rect) {
+    let center_x = 0.0;
+    let center_y = 0.0;
+
+    // Vertical center line (mono signal appears here)
+    ctx.draw(&ratatui::widgets::canvas::Line {
+        x1: center_x,
+        y1: -1.0,
+        x2: center_x,
+        y2: 1.0,
+        color: Color::Rgb(60, 60, 80),
+    });
+
+    // Horizontal center line
+    ctx.draw(&ratatui::widgets::canvas::Line {
+        x1: -1.0,
+        y1: center_y,
+        x2: 1.0,
+        y2: center_y,
+        color: Color::Rgb(60, 60, 80),
+    });
+
+    // Diagonal lines (45 degree stereo spread guides)
+    // These show +/- 45 degree phase relationships
+    ctx.draw(&ratatui::widgets::canvas::Line {
+        x1: -0.9,
+        y1: -0.9,
+        x2: 0.9,
+        y2: 0.9,
+        color: Color::Rgb(40, 40, 60),
+    });
+    ctx.draw(&ratatui::widgets::canvas::Line {
+        x1: -0.9,
+        y1: 0.9,
+        x2: 0.9,
+        y2: -0.9,
+        color: Color::Rgb(40, 40, 60),
+    });
+
+    // Reference circles at 0.5 and 1.0 radius would be nice but Canvas
+    // doesn't have circle primitive, so we skip for now
 }
 
 fn draw_grid(ctx: &mut Context, area: Rect) {
@@ -422,90 +535,58 @@ fn draw_grid(ctx: &mut Context, area: Rect) {
     }
 }
 
-fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
+/// Draw waveform using Chart widget with braille markers for smoother rendering
+fn draw_waveform_chart(f: &mut Frame, area: Rect, app: &App) {
     // Use timeline waveform when: paused OR (playing AND user toggled timeline view)
     let use_timeline =
         (!app.is_playing || app.show_timeline_while_playing) && app.timeline_waveform.is_some();
 
     let peaks = if use_timeline {
-        // Get peaks from the full-timeline waveform
+        // Get peaks from the full-timeline waveform (no trigger needed)
         app.timeline_waveform
             .as_ref()
             .unwrap()
             .get_display_peaks(area.width as usize)
     } else {
-        // Get peak pairs from the live waveform buffer
-        app.waveform_buffer.get_display_peaks(area.width as usize)
+        // Get peak pairs from the live waveform buffer with trigger stabilization
+        app.waveform_buffer
+            .get_triggered_display_peaks(area.width as usize)
     };
 
-    if peaks.iter().any(|(min, max)| *min != 0.0 || *max != 0.0) {
-        // Choose color based on mode
-        let waveform_color = if use_timeline {
-            Color::Rgb(100, 150, 255) // Blue for timeline view
-        } else {
-            Color::Rgb(0, 255, 100) // Bright green for live oscilloscope
-        };
+    let has_signal = peaks.iter().any(|(min, max)| *min != 0.0 || *max != 0.0);
 
-        // Draw audio data using peak-to-peak visualization
-        for (i, (min, max)) in peaks.iter().enumerate() {
-            let x = i as f64;
-            // Amplify for better visibility
-            let min_amp = (*min * 1.5).clamp(-0.95, 0.95) as f64;
-            let max_amp = (*max * 1.5).clamp(-0.95, 0.95) as f64;
+    // Choose colors based on mode
+    let (upper_color, lower_color) = if use_timeline {
+        (Color::Rgb(100, 150, 255), Color::Rgb(60, 100, 200)) // Blue tones for timeline
+    } else {
+        (Color::Rgb(0, 255, 100), Color::Rgb(0, 200, 80)) // Green tones for live
+    };
 
-            // Draw vertical line from min to max for this time slice
-            if (max_amp - min_amp).abs() > 0.01 {
-                // Only draw if there's actual signal
-                ctx.draw(&ratatui::widgets::canvas::Line {
-                    x1: x,
-                    y1: min_amp,
-                    x2: x,
-                    y2: max_amp,
-                    color: waveform_color,
-                });
-            } else if max_amp.abs() > 0.01 {
-                // Draw a point for very quiet signals
-                ctx.draw(&ratatui::widgets::canvas::Line {
-                    x1: x,
-                    y1: max_amp - 0.01,
-                    x2: x,
-                    y2: max_amp + 0.01,
-                    color: waveform_color,
-                });
-            }
+    // Build data points for the waveform
+    #[allow(clippy::complexity)]
+    let (upper_data, lower_data): (Vec<(f64, f64)>, Vec<(f64, f64)>) = if has_signal {
+        // Create upper envelope (max values) and lower envelope (min values)
+        let upper: Vec<(f64, f64)> = peaks
+            .iter()
+            .enumerate()
+            .map(|(i, (_min, max))| {
+                let x = i as f64;
+                let y = (*max * 1.5).clamp(-0.95, 0.95) as f64;
+                (x, y)
+            })
+            .collect();
 
-            // Connect to zero line for better zero-crossing visibility
-            if i > 0 {
-                let prev_max = (peaks[i - 1].1 * 1.5).clamp(-0.95, 0.95) as f64;
-                // Draw connecting line if crossing zero
-                if (prev_max > 0.0 && min_amp < 0.0) || (prev_max < 0.0 && max_amp > 0.0) {
-                    ctx.draw(&ratatui::widgets::canvas::Line {
-                        x1: x - 0.5,
-                        y1: 0.0,
-                        x2: x,
-                        y2: 0.0,
-                        color: if use_timeline {
-                            Color::Rgb(60, 100, 180) // Darker blue for timeline zero crossings
-                        } else {
-                            Color::Rgb(0, 150, 50) // Slightly darker green for live zero crossings
-                        },
-                    });
-                }
-            }
-        }
+        let lower: Vec<(f64, f64)> = peaks
+            .iter()
+            .enumerate()
+            .map(|(i, (min, _max))| {
+                let x = i as f64;
+                let y = (*min * 1.5).clamp(-0.95, 0.95) as f64;
+                (x, y)
+            })
+            .collect();
 
-        // Draw playback position marker for timeline view
-        if use_timeline {
-            let position_x = (app.playback_position * area.width as f32) as f64;
-            // Draw vertical line showing current position
-            ctx.draw(&ratatui::widgets::canvas::Line {
-                x1: position_x,
-                y1: -1.0,
-                x2: position_x,
-                y2: 1.0,
-                color: Color::Rgb(255, 200, 0), // Yellow/amber marker
-            });
-        }
+        (upper, lower)
     } else {
         // Demo sine wave when no audio loaded
         let time_offset = std::time::SystemTime::now()
@@ -514,23 +595,67 @@ fn draw_waveform(ctx: &mut Context, area: Rect, app: &App) {
             .as_millis() as f64
             / 1000.0;
 
-        for x in 0..area.width {
-            let t = x as f64 / area.width as f64 * 4.0 * std::f64::consts::PI;
-            // Mix two sine waves for more interesting visualization
-            let y1 = (t + time_offset * 0.5).sin() * 0.8;
-            let y2 = ((t * 2.0) + time_offset).sin() * 0.4;
-            let y = (y1 + y2).clamp(-0.95, 0.95);
+        let demo: Vec<(f64, f64)> = (0..area.width)
+            .map(|x| {
+                let t = x as f64 / area.width as f64 * 4.0 * std::f64::consts::PI;
+                let y1 = (t + time_offset * 0.5).sin() * 0.8;
+                let y2 = ((t * 2.0) + time_offset).sin() * 0.4;
+                let y = (y1 + y2).clamp(-0.95, 0.95);
+                (x as f64, y)
+            })
+            .collect();
 
-            // Draw vertical lines to show the waveform
-            ctx.draw(&ratatui::widgets::canvas::Line {
-                x1: x as f64,
-                y1: 0.0,
-                x2: x as f64,
-                y2: y,
-                color: Color::Rgb(0, 255, 100),
-            });
-        }
+        (demo.clone(), demo)
+    };
+
+    // Choose marker and graph type based on display mode
+    let (marker, graph_type) = match app.waveform_display_mode {
+        WaveformDisplayMode::Scatter => (symbols::Marker::Dot, GraphType::Scatter), // Vintage look
+        _ => (symbols::Marker::Braille, GraphType::Line), // Smooth connected lines
+    };
+
+    // Create datasets
+    let mut datasets = vec![
+        Dataset::default()
+            .marker(marker)
+            .graph_type(graph_type)
+            .style(Style::default().fg(upper_color))
+            .data(&upper_data),
+        Dataset::default()
+            .marker(marker)
+            .graph_type(graph_type)
+            .style(Style::default().fg(lower_color))
+            .data(&lower_data),
+    ];
+
+    // Add playback position marker for timeline view
+    let position_data: Vec<(f64, f64)>;
+    if use_timeline && has_signal {
+        let position_x = (app.playback_position * area.width as f32) as f64;
+        position_data = vec![(position_x, -0.95), (position_x, 0.95)];
+        datasets.push(
+            Dataset::default()
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::default().fg(Color::Rgb(255, 200, 0)))
+                .data(&position_data),
+        );
     }
+
+    // Create the chart (no visible axes - we have our own grid)
+    let chart = Chart::new(datasets)
+        .x_axis(
+            Axis::default()
+                .bounds([0.0, area.width as f64])
+                .labels::<Vec<Span>>(vec![]),
+        )
+        .y_axis(
+            Axis::default()
+                .bounds([-1.0, 1.0])
+                .labels::<Vec<Span>>(vec![]),
+        );
+
+    f.render_widget(chart, area);
 }
 
 fn draw_progress_bar(f: &mut Frame, area: Rect, app: &App) {
