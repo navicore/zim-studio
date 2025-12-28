@@ -53,6 +53,7 @@ pub struct App {
     pub save_dialog: Option<SaveDialog>,
     pub is_looping: bool,                  // Whether we're looping the selection
     pub show_timeline_while_playing: bool, // Toggle timeline view during playback (default: oscilloscope)
+    pub scatter_mode: bool,                // Toggle scatter vs line mode for oscilloscope
     pub view_mode: ViewMode,
     pub telemetry: AudioTelemetry,
     previous_left_level: f32,           // For slew gate rate calculation
@@ -90,6 +91,7 @@ impl App {
             save_dialog: None,
             is_looping: false,
             show_timeline_while_playing: false,
+            scatter_mode: false,
             view_mode: ViewMode::Player,
             telemetry: AudioTelemetry::new(),
             previous_left_level: 0.0,
@@ -1825,6 +1827,10 @@ fn handle_player_keys(app: &mut App, key: event::KeyEvent) -> Result<(), Box<dyn
         KeyCode::Char('w') => {
             // Toggle timeline waveform view while playing
             app.show_timeline_while_playing = !app.show_timeline_while_playing;
+        }
+        KeyCode::Char('m') => {
+            // Toggle scatter mode for oscilloscope (vintage look)
+            app.scatter_mode = !app.scatter_mode;
         }
         KeyCode::Char('n') => {
             // Next track in playlist

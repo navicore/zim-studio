@@ -218,6 +218,19 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
         }));
     }
 
+    // Scatter mode toggle for oscilloscope
+    let scatter_style = if app.scatter_mode {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    controls_row2.push(create_control_button("m", scatter_style));
+    controls_row2.push(Span::raw(if app.scatter_mode {
+        " scatter ●  "
+    } else {
+        " scatter  "
+    }));
+
     controls_row2.extend(create_control(
         "s",
         "save",
@@ -492,16 +505,23 @@ fn draw_waveform_chart(f: &mut Frame, area: Rect, app: &App) {
         (demo.clone(), demo)
     };
 
-    // Create datasets with braille markers
+    // Choose marker and graph type based on scatter mode
+    let (marker, graph_type) = if app.scatter_mode {
+        (symbols::Marker::Dot, GraphType::Scatter) // Vintage oscilloscope look
+    } else {
+        (symbols::Marker::Braille, GraphType::Line) // Smooth connected lines
+    };
+
+    // Create datasets
     let mut datasets = vec![
         Dataset::default()
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
+            .marker(marker)
+            .graph_type(graph_type)
             .style(Style::default().fg(upper_color))
             .data(&upper_data),
         Dataset::default()
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
+            .marker(marker)
+            .graph_type(graph_type)
             .style(Style::default().fg(lower_color))
             .data(&lower_data),
     ];
