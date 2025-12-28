@@ -34,8 +34,8 @@ pub enum ViewMode {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum WaveformDisplayMode {
     #[default]
-    Line,       // Braille markers with connected lines (smooth)
-    Scatter,    // Dot markers as individual points (vintage)
+    Line, // Braille markers with connected lines (smooth)
+    Scatter,     // Dot markers as individual points (vintage)
     Vectorscope, // X/Y plot of left vs right channel (stereo phase)
 }
 

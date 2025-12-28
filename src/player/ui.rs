@@ -221,7 +221,10 @@ fn draw_main_ui(f: &mut Frame, app: &App) {
     // Waveform display mode indicator (cycles: line → scatter → vector)
     let mode_style = Style::default().fg(Color::Yellow);
     controls_row2.push(create_control_button("m", mode_style));
-    controls_row2.push(Span::raw(format!(" {}  ", app.waveform_display_mode.label())));
+    controls_row2.push(Span::raw(format!(
+        " {}  ",
+        app.waveform_display_mode.label()
+    )));
 
     controls_row2.extend(create_control(
         "s",
@@ -432,18 +435,22 @@ fn draw_vectorscope(f: &mut Frame, area: Rect, app: &App) {
     });
 
     // Get vectorscope points (left, right pairs)
-    let points = app.waveform_buffer.get_vectorscope_points(inner_area.width as usize * 4);
+    let points = app
+        .waveform_buffer
+        .get_vectorscope_points(inner_area.width as usize * 4);
 
     if points.is_empty() {
         return;
     }
 
     // Create dataset for the vectorscope plot
-    let datasets = vec![Dataset::default()
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Scatter)
-        .style(Style::default().fg(Color::Rgb(0, 255, 150)))
-        .data(&points)];
+    let datasets = vec![
+        Dataset::default()
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Scatter)
+            .style(Style::default().fg(Color::Rgb(0, 255, 150)))
+            .data(&points),
+    ];
 
     let chart = Chart::new(datasets)
         .x_axis(
