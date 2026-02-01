@@ -33,9 +33,9 @@ pub enum ViewMode {
 /// Waveform visualization display mode
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum WaveformDisplayMode {
+    Line,    // Braille markers with connected lines (smooth)
+    Scatter, // Dot markers as individual points (vintage)
     #[default]
-    Line, // Braille markers with connected lines (smooth)
-    Scatter,     // Dot markers as individual points (vintage)
     Vectorscope, // X/Y plot of left vs right channel (stereo phase)
 }
 
@@ -43,9 +43,9 @@ impl WaveformDisplayMode {
     /// Cycle to the next display mode
     pub fn next(self) -> Self {
         match self {
+            Self::Vectorscope => Self::Line,
             Self::Line => Self::Scatter,
             Self::Scatter => Self::Vectorscope,
-            Self::Vectorscope => Self::Line,
         }
     }
 
