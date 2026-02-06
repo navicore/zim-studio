@@ -76,7 +76,7 @@ enum Commands {
         /// Path to project (defaults to current directory)
         #[arg(default_value = ".")]
         path: String,
-        /// Extra tags to apply to newly created sidecar files
+        /// Extra tags to apply to newly created sidecar files (repeatable, deduplicated)
         #[arg(short = 't', long = "tag", action = clap::ArgAction::Append)]
         tags: Vec<String>,
     },
