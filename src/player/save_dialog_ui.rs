@@ -84,7 +84,7 @@ pub fn draw_save_dialog(f: &mut Frame, area: Rect, dialog: &SaveDialog) {
         });
 
     // Use render_stateful_widget to enable scrolling
-    let mut list_state = dialog.list_state.clone();
+    let mut list_state = dialog.list_state;
     f.render_stateful_widget(dirs_list, chunks[1], &mut list_state);
 
     // Filename field
