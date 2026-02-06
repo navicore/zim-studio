@@ -1518,7 +1518,10 @@ pub fn run_with_playlist(file_paths: &[String]) -> Result<(), Box<dyn Error>> {
 fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>>
+where
+    B::Error: 'static,
+{
     loop {
         // Update waveform data
         app.update_waveform();
