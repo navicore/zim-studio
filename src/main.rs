@@ -76,6 +76,9 @@ enum Commands {
         /// Path to project (defaults to current directory)
         #[arg(default_value = ".")]
         path: String,
+        /// Extra tags to apply to newly created sidecar files
+        #[arg(short = 't', long = "tag", action = clap::ArgAction::Append)]
+        tags: Vec<String>,
     },
     /// Validate YAML frontmatter in all sidecar files
     Lint {
@@ -240,8 +243,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 interactive,
             )?;
         }
-        Commands::Update { path } => {
-            cli::update::handle_update(&path)?;
+        Commands::Update { path, tags } => {
+            cli::update::handle_update(&path, &tags)?;
         }
         Commands::Lint { path } => {
             cli::lint::handle_lint(&path)?;
