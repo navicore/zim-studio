@@ -20,7 +20,7 @@ use zim_studio::utils::sidecar::get_sidecar_path;
 use zim_studio::utils::validation::validate_path_exists;
 use zim_studio::zimignore::ZimIgnore;
 
-pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
+pub fn handle_update(project_path: &str, extra_tags: &[String]) -> Result<(), Box<dyn Error>> {
     let project_path = Path::new(project_path);
 
     // Verify this is a valid project directory
@@ -84,6 +84,7 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
             &pb,
             &project_cache,
             &config,
+            extra_tags,
         );
 
         if let Err(e) = result {
@@ -99,7 +100,7 @@ pub fn handle_update(project_path: &str) -> Result<(), Box<dyn Error>> {
     let updated = *updated_count.lock().unwrap();
     let skipped = *skipped_count.lock().unwrap();
 
-    print_update_summary(created, updated, skipped);
+    print_update_summary(created, updated, skipped, extra_tags);
 
     Ok(())
 }
@@ -210,6 +211,7 @@ fn process_media_file(
     pb: &ProgressBar,
     project_cache: &Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
     config: &Arc<Config>,
+    extra_tags: &[String],
 ) -> Result<(), Box<dyn Error>> {
     let sidecar_path = get_sidecar_path(file_path);
 
@@ -265,6 +267,7 @@ fn process_media_file(
         modified.as_deref(),
         project_name.as_deref(),
         config,
+        extra_tags,
     );
 
     fs::write(&sidecar_path, content)?;
@@ -274,7 +277,7 @@ fn process_media_file(
     Ok(())
 }
 
-fn print_update_summary(created: u32, updated: u32, skipped: u32) {
+fn print_update_summary(created: u32, updated: u32, skipped: u32, extra_tags: &[String]) {
     println!("\n{} {}", "✓".green().bold(), "Update complete!".bold());
     println!(
         "  {} {} new sidecar files",
@@ -292,6 +295,13 @@ fn print_update_summary(created: u32, updated: u32, skipped: u32) {
         skipped.to_string().yellow().bold(),
         "(already have sidecars)".bright_black()
     );
+    if !extra_tags.is_empty() {
+        println!(
+            "  {} {}",
+            "Extra tags:".bright_black(),
+            extra_tags.join(", ").cyan()
+        );
+    }
 }
 
 fn extract_file_metadata(path: &Path) -> Result<(u64, Option<String>), Box<dyn Error>> {
@@ -319,6 +329,7 @@ fn generate_sidecar_content(
     modified: Option<&str>,
     project: Option<&str>,
     config: &Config,
+    extra_tags: &[String],
 ) -> String {
     // Calculate smart defaults
     let title = extract_title_from_filename(file_name);
@@ -341,6 +352,13 @@ fn generate_sidecar_content(
     for (pattern, tag_value) in &config.tag_mappings {
         if filename_lower.contains(&pattern.to_lowercase()) && !tags.contains(tag_value) {
             tags.push(tag_value.clone());
+        }
+    }
+
+    // Append extra tags from CLI with dedup
+    for tag in extra_tags {
+        if !tags.contains(tag) {
+            tags.push(tag.clone());
         }
     }
 
