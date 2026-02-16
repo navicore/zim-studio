@@ -14,7 +14,7 @@ path = "src/main.rs"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 serde = { version = "1", features = ["derive"] }
-toml = "0.9"
+toml = "1.0"
 dirs = "6.0"
 shellexpand = "3"
 chrono = "0.4"
