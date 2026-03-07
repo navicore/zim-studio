@@ -1,6 +1,6 @@
 [package]
 name = "zim-studio"
-version = "1.4.2"
+version = "1.4.4"
 edition = "2024"
 license = "MIT"
 authors = ["Ed Sweeney <ed@onextent.com>"]
