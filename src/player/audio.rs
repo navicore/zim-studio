@@ -5,10 +5,11 @@
 //! visualization. It supports multiple audio formats (WAV, FLAC) and provides
 //! progress tracking and seeking capabilities.
 
-use rodio::{OutputStream, OutputStreamBuilder, Sink, Source};
+use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, Read};
+use std::num::NonZero;
 use std::path::Path;
 use std::sync::{
     Arc,
@@ -26,8 +27,8 @@ pub struct AudioInfo {
 }
 
 pub struct AudioEngine {
-    _stream: OutputStream,
-    sink: Sink,
+    _stream: MixerDeviceSink,
+    sink: Player,
     samples_tx: mpsc::Sender<Vec<f32>>,
     pub info: Option<AudioInfo>,
     pub duration: Option<Duration>,
@@ -42,10 +43,9 @@ pub struct AudioEngine {
 
 impl AudioEngine {
     pub fn new() -> AudioEngineResult {
-        // Create output stream using rodio 0.21 API
-        let stream = OutputStreamBuilder::open_default_stream()
-            .map_err(|e| Box::new(e) as Box<dyn Error>)?;
-        let sink = Sink::connect_new(stream.mixer());
+        let stream =
+            DeviceSinkBuilder::open_default_sink().map_err(|e| Box::new(e) as Box<dyn Error>)?;
+        let sink = Player::connect_new(stream.mixer());
         let (samples_tx, samples_rx) = mpsc::channel();
 
         Ok((
@@ -68,11 +68,6 @@ impl AudioEngine {
 
     pub fn load_file(&mut self, path: &Path) -> Result<(), Box<dyn Error>> {
         // Stop any currently playing audio
-        self.sink.stop();
-
-        // Create a new sink for the new file
-        // Note: We can't easily recreate the sink from stored stream in rodio 0.21
-        // For now, we'll clear the current sink
         self.sink.stop();
 
         // Reset position tracking
@@ -137,8 +132,8 @@ impl AudioEngine {
 
         // Get info from mixed source
         self.info = Some(AudioInfo {
-            channels: mixed_source.channels(),
-            sample_rate: mixed_source.sample_rate(),
+            channels: mixed_source.channels().into(),
+            sample_rate: mixed_source.sample_rate().into(),
         });
 
         self.duration = mixed_source.total_duration();
@@ -146,9 +141,10 @@ impl AudioEngine {
         // For mixed sources, we can't easily calculate total samples
         // Use duration and sample rate to estimate
         if let Some(duration) = self.duration {
-            let sample_rate = mixed_source.sample_rate() as f64;
-            let channels = mixed_source.channels() as f64;
-            self.total_samples = (duration.as_secs_f64() * sample_rate * channels) as usize;
+            let sample_rate: u32 = mixed_source.sample_rate().into();
+            let channels: u16 = mixed_source.channels().into();
+            self.total_samples =
+                (duration.as_secs_f64() * sample_rate as f64 * channels as f64) as usize;
         } else {
             self.total_samples = 0;
         }
@@ -183,17 +179,18 @@ impl AudioEngine {
 
         // Get info from mixed source
         self.info = Some(AudioInfo {
-            channels: mixed_source.channels(),
-            sample_rate: mixed_source.sample_rate(),
+            channels: mixed_source.channels().into(),
+            sample_rate: mixed_source.sample_rate().into(),
         });
 
         self.duration = mixed_source.total_duration();
 
         // For mixed sources, estimate total samples
         if let Some(duration) = self.duration {
-            let sample_rate = mixed_source.sample_rate() as f64;
-            let channels = mixed_source.channels() as f64;
-            self.total_samples = (duration.as_secs_f64() * sample_rate * channels) as usize;
+            let sample_rate: u32 = mixed_source.sample_rate().into();
+            let channels: u16 = mixed_source.channels().into();
+            self.total_samples =
+                (duration.as_secs_f64() * sample_rate as f64 * channels as f64) as usize;
         } else {
             self.total_samples = 0;
         }
@@ -311,8 +308,8 @@ impl AudioEngine {
         self.cached_aiff_data = Some(aiff_data.clone());
 
         self.info = Some(AudioInfo {
-            sample_rate: source.sample_rate(),
-            channels: source.channels(),
+            sample_rate: source.sample_rate().into(),
+            channels: source.channels().into(),
         });
 
         // Store the file path for seeking
@@ -479,7 +476,6 @@ impl AudioEngine {
 
             // Stop current playback
             self.sink.stop();
-            self.sink.stop(); // Double-stop for rodio 0.21 compatibility
 
             // Update position counter
             self.samples_played.store(new_position, Ordering::Relaxed);
@@ -610,12 +606,12 @@ impl Source for WavSource {
         None
     }
 
-    fn channels(&self) -> u16 {
-        self.channels
+    fn channels(&self) -> NonZero<u16> {
+        NonZero::new(self.channels).expect("channels must be non-zero")
     }
 
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate
+    fn sample_rate(&self) -> NonZero<u32> {
+        NonZero::new(self.sample_rate).expect("sample_rate must be non-zero")
     }
 
     fn total_duration(&self) -> Option<Duration> {
@@ -708,12 +704,12 @@ impl Source for FlacSource {
         None
     }
 
-    fn channels(&self) -> u16 {
-        self.channels as u16
+    fn channels(&self) -> NonZero<u16> {
+        NonZero::new(self.channels as u16).expect("channels must be non-zero")
     }
 
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate
+    fn sample_rate(&self) -> NonZero<u32> {
+        NonZero::new(self.sample_rate).expect("sample_rate must be non-zero")
     }
 
     fn total_duration(&self) -> Option<Duration> {
@@ -803,12 +799,12 @@ impl rodio::Source for AiffSource {
         None
     }
 
-    fn channels(&self) -> u16 {
-        self.channels
+    fn channels(&self) -> NonZero<u16> {
+        NonZero::new(self.channels).expect("channels must be non-zero")
     }
 
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate
+    fn sample_rate(&self) -> NonZero<u32> {
+        NonZero::new(self.sample_rate).expect("sample_rate must be non-zero")
     }
 
     fn total_duration(&self) -> Option<Duration> {

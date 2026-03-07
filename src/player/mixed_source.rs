@@ -4,6 +4,7 @@
 //! gain control. All files are pre-mixed into memory for fast, high-quality seeking.
 
 use rodio::Source;
+use std::num::NonZero;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -282,12 +283,12 @@ impl Source for PreMixedSource {
         Some(self.mixed_samples.len() - self.position)
     }
 
-    fn channels(&self) -> u16 {
-        self.channels
+    fn channels(&self) -> NonZero<u16> {
+        NonZero::new(self.channels).expect("channels must be non-zero")
     }
 
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate
+    fn sample_rate(&self) -> NonZero<u32> {
+        NonZero::new(self.sample_rate).expect("sample_rate must be non-zero")
     }
 
     fn total_duration(&self) -> Option<Duration> {
