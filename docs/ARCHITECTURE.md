@@ -81,4 +81,4 @@ Global config lives at `~/.config/zim/config.toml`. Stores root directory, defau
 
 ## Tests
 
-Integration tests in `tests/config_test.rs`. The `Makefile` provides `make ci` to run fmt, clippy, test, and check in sequence.
+Integration tests in `tests/config_test.rs`. The `justfile` provides `just ci` to run fmt-check, clippy, test, and build in sequence — the same recipe GitHub Actions runs.
