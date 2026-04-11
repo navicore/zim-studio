@@ -141,7 +141,7 @@ mod tests {
 
         assert_eq!(dialog.current_path, PathBuf::from("/test/path"));
         assert_eq!(dialog.filename, "test.wav");
-        assert_eq!(dialog.has_selection, false);
+        assert!(!dialog.has_selection);
         assert_eq!(dialog.focus, SaveDialogFocus::DirectoryList);
         assert_eq!(dialog.selected_index, 0);
     }

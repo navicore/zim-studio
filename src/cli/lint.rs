@@ -460,8 +460,7 @@ Content"#;
         // Should contain error about missing required field
         assert!(
             error_msg.contains("Missing required field"),
-            "Error was: {}",
-            error_msg
+            "Error was: {error_msg}"
         );
     }
 
@@ -488,7 +487,7 @@ Content"#;
 
         let result = validate_yaml_frontmatter(&file_path);
         if let Err(e) = &result {
-            eprintln!("Unexpected error in duration unknown test: {}", e);
+            eprintln!("Unexpected error in duration unknown test: {e}");
         }
         assert!(result.is_ok());
     }
@@ -549,9 +548,9 @@ Content after frontmatter"#;
             }
         }
 
-        assert_eq!(total, 2, "Expected 2 total files, got {}", total); // Only sidecar files counted
-        assert_eq!(valid, 1, "Expected 1 valid file, got {}", valid);
-        assert_eq!(invalid, 1, "Expected 1 invalid file, got {}", invalid);
+        assert_eq!(total, 2, "Expected 2 total files, got {total}"); // Only sidecar files counted
+        assert_eq!(valid, 1, "Expected 1 valid file, got {valid}");
+        assert_eq!(invalid, 1, "Expected 1 invalid file, got {invalid}");
         assert_eq!(errors.len(), 1);
         assert!(errors[0].0.to_str().unwrap().contains("bad.mp3.md"));
     }

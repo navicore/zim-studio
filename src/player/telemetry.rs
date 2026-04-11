@@ -85,7 +85,7 @@ pub struct TelemetrySnapshot {
     pub playback_state: String,
     /// Left channel audio level metrics
     pub left_channel: AudioLevelMetrics,
-    /// Right channel audio level metrics  
+    /// Right channel audio level metrics
     pub right_channel: AudioLevelMetrics,
     /// Audio format metrics
     pub format_info: AudioFormatMetrics,
@@ -417,8 +417,11 @@ mod tests {
 
     #[test]
     fn test_telemetry_enabled_capture() {
-        let mut config = TelemetryConfig::default();
-        config.enabled = true;
+        let mut config = TelemetryConfig {
+            enabled: true,
+            ..Default::default()
+        };
+
         config.capture_interval_ms = 0; // Immediate capture
 
         let mut telemetry = AudioTelemetry::with_config(config);
@@ -435,8 +438,10 @@ mod tests {
 
     #[test]
     fn test_slew_gate_metrics() {
-        let mut config = TelemetryConfig::default();
-        config.enabled = true;
+        let mut config = TelemetryConfig {
+            enabled: true,
+            ..Default::default()
+        };
         config.capture_interval_ms = 0;
 
         let mut telemetry = AudioTelemetry::with_config(config);
@@ -453,8 +458,12 @@ mod tests {
 
     #[test]
     fn test_buffer_size_limit() {
-        let mut config = TelemetryConfig::default();
-        config.enabled = true;
+        let mut config = TelemetryConfig {
+            enabled: true,
+            buffer_size: 2,
+            capture_interval_ms: 0,
+            ..Default::default()
+        };
         config.buffer_size = 2;
         config.capture_interval_ms = 0;
 

@@ -134,7 +134,7 @@ fn default_tag_mappings() -> HashMap<String, String> {
 
 fn default_zimignore_content() -> String {
     r#"# ZIM Studio Default .zimignore
-# 
+#
 # This file defines patterns for files and directories that should be ignored
 # when running "zim update" to generate sidecar files. The syntax is similar
 # to .gitignore with support for glob patterns.
@@ -347,8 +347,8 @@ mod tests {
         let config = Config::new();
         assert_eq!(config.default_folders, default_folders());
         assert_eq!(config.default_gitignore, default_gitignore());
-        assert_eq!(config.include_readmes, true);
-        assert_eq!(config.normalize_project_names, true);
+        assert!(config.include_readmes);
+        assert!(config.normalize_project_names);
     }
 
     #[test]
@@ -356,8 +356,8 @@ mod tests {
         let config: Config = Default::default();
         assert_eq!(config.default_folders, default_folders());
         assert_eq!(config.default_gitignore, default_gitignore());
-        assert_eq!(config.include_readmes, true);
-        assert_eq!(config.normalize_project_names, true);
+        assert!(config.include_readmes);
+        assert!(config.normalize_project_names);
     }
 
     #[test]
@@ -370,12 +370,12 @@ mod tests {
 
         // Test normalize_project_names
         config.set_value("normalize_project_names", "true").unwrap();
-        assert_eq!(config.normalize_project_names, true);
+        assert!(config.normalize_project_names);
 
         config
             .set_value("normalize_project_names", "false")
             .unwrap();
-        assert_eq!(config.normalize_project_names, false);
+        assert!(!config.normalize_project_names);
 
         // Test invalid boolean
         let result = config.set_value("normalize_project_names", "invalid");

@@ -1,5 +1,6 @@
 [![Dependabot Updates](https://github.com/navicore/zim-studio/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/dependabot/dependabot-updates)
-[![CI](https://github.com/navicore/zim-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci.yml)
+[![CI (Linux)](https://github.com/navicore/zim-studio/actions/workflows/ci-linux.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci-linux.yml)
+[![CI (macOS)](https://github.com/navicore/zim-studio/actions/workflows/ci-macos.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci-macos.yml)
 [![Release with Auto Version (PAT)](https://github.com/navicore/zim-studio/actions/workflows/release.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/release.yml)
 
 # ZIM Studio - Terminal-Based Audio Tools
@@ -233,16 +234,30 @@ zim completions powershell | Out-String | Invoke-Expression
 
 ## Development
 
-```bash
-# Run all checks locally (matches CI)
-make ci
+The `justfile` is the single source of truth for build/test/lint — both local
+development and GitHub Actions CI run the same recipes, so there is no drift
+between "works on my machine" and CI. Toolchain version is pinned in
+`rust-toolchain.toml`; CI workflows pin the same version explicitly.
 
-# Individual commands
-make fmt        # Format code
-make clippy     # Run lints
-make test       # Run tests
-make check      # Check compilation
+```bash
+# Run all checks locally (exactly what CI runs)
+just ci         # fmt-check + lint + test + build
+
+# Individual recipes
+just fmt        # Format code
+just fmt-check  # Check formatting
+just lint       # Clippy (warnings = errors)
+just test       # Run the test suite
+just build      # Release build
 ```
+
+`just ci` runs:
+1. `cargo fmt --all -- --check` — formatting
+2. `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings ...` — lints (warnings are errors)
+3. `cargo test --locked --workspace --all-targets --all-features` — tests
+4. `cargo build --locked --release --all-features` — release build
+
+If `just ci` passes locally, CI will pass.
 
 ## Audio Player User Guide
 
