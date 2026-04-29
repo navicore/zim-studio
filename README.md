@@ -1,3 +1,8 @@
+<!-- ghmig:moved -->
+> **This repository has moved to [https://git.navicore.tech/navicore/zim-studio](https://git.navicore.tech/navicore/zim-studio).**
+>
+> The GitHub copy is archived and no longer maintained.
+
 [![Dependabot Updates](https://github.com/navicore/zim-studio/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/dependabot/dependabot-updates)
 [![CI (Linux)](https://github.com/navicore/zim-studio/actions/workflows/ci-linux.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci-linux.yml)
 [![CI (macOS)](https://github.com/navicore/zim-studio/actions/workflows/ci-macos.yml/badge.svg)](https://github.com/navicore/zim-studio/actions/workflows/ci-macos.yml)
